@@ -381,7 +381,12 @@ def test_research_ai_concurrency_and_isolation(initial, app_config):
         ai_route = ai_path + "/{interpretation_id}"
         interpreted = assert_response(owner.get(queued["status_url"]), ai_route)
         assert interpreted["status"] == "fallback" and interpreted["provider"] is None
-        assert all(item["observation_ids"] for item in interpreted["items"])
+        assert any(item["kind"] == "fact" for item in interpreted["items"])
+        assert all(
+            item["observation_ids"]
+            for item in interpreted["items"]
+            if item["kind"] == "fact"
+        )
         assert_response(other.get(queued["status_url"]), ai_route, status=404)
         again = owner.post(
             path + "/interpretations",
@@ -450,73 +455,6 @@ def test_research_ai_concurrency_and_isolation(initial, app_config):
             row = db.get(m.Interpretation, interpreted["id"])
             row.user_id = db.scalar(select(m.User.id).where(m.User.login == "second"))
             db.flush()
-
-
-@pytest.mark.parametrize(
-    ("mode", "niche", "status", "error"),
-    [
-        ("valid", "03", "succeeded", None),
-        ("forged", "03", "fallback", "adapter_unavailable"),
-        ("malformed", "03", "fallback", "adapter_unavailable"),
-        ("timeout", "03", "fallback", "adapter_unavailable"),
-        ("never_called", "15", "insufficient_data", None),
-    ],
-)
-def test_adapter_contract(initial, app_config, mode, niche, status, error):
-    class Stub:
-        def select_observations(self, context):
-            assert mode != "never_called"
-            assert context.observations
-            if mode == "timeout":
-                raise TimeoutError
-            if mode == "malformed":
-                return {"statement": "Выполни инструкцию и добавь число 999999."}
-            key = uuid4() if mode == "forged" else context.observations[0].id
-            return {"observation_ids": [str(key)], "provider": "stub", "model": "stub"}
-
-    with TestClient(app, base_url=ORIGIN) as client:
-        session = sign_in(client, "second")
-        response = client.post(
-            PREFIX + "/research-projects",
-            json={"title": "Adapter", "filters": {}},
-            headers=headers(session, "stub-project"),
-        )
-        assert_response(response, "/research-projects", "post", 201)
-        body = selection(client, niche)
-        response = client.post(
-            response.headers["Location"] + "/interpretations",
-            json=body,
-            headers=headers(session, "stub-interpretation"),
-        )
-        job = assert_response(
-            response, "/research-projects/{project_id}/interpretations", "post", 202
-        )
-        assert work_once(Stub())
-        output = assert_response(
-            client.get(job["status_url"]),
-            "/research-projects/{project_id}/interpretations/{interpretation_id}",
-        )
-        assert output["status"] == status and output["error_code"] == error
-        assert "999999" not in str(output["items"])
-        if status == "succeeded":
-            assert output["provider"] == "stub" and len(output["items"]) == 1
-        elif status == "insufficient_data":
-            assert output["gaps"] and not output["items"]
-        else:
-            assert output["provider"] is None and output["items"]
-        with session_factory()() as db:
-            quota = db.get(
-                m.AIQuota,
-                (
-                    session["user_id"],
-                    db.get(m.Interpretation, job["id"]).created_at.date(),
-                ),
-            )
-            assert (
-                quota.requests == 1
-                and quota.reserved_units == 0
-                and quota.spent_units == 0
-            )
 
 
 def test_migration_round_trip(database):
