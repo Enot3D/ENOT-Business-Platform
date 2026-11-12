@@ -134,6 +134,6 @@ docker compose --profile api --profile worker up -d --build --wait --wait-timeou
 
 | Задача | Стыковка и проверка |
 | --- | --- |
-| [TASK-005](../tasks/backlog/TASK-005.md) | Из `/app/backend` запускаются `enot_api.main:app`, Alembic и CLI импорта. Образ сохраняет соседние каталоги TASK-002/003/004 для импорта и OpenAPI. CI проверяет `/readyz`, повтор импорта, вход и каталог из 20 ниш, миграции и pytest. |
+| [TASK-005](../architecture/TASK-004/development-plan.md) | Из `/app/backend` запускаются `enot_api.main:app`, Alembic и CLI импорта. Образ сохраняет соседние каталоги TASK-002/003/004 для импорта и OpenAPI. CI проверяет `/readyz`, повтор импорта, вход и каталог из 20 ниш, миграции и pytest. |
 | [TASK-006](../tasks/backlog/TASK-006.md) | Сверить путь `frontend/`, npm lock-файл и скрипты Next.js. Настроить rewrite `/api/v1/:path*` на `${API_INTERNAL_ORIGIN}/api/v1/:path*`, сохранить относительные URL в браузере и проверить профиль `web` по `http://localhost:3000`. После подключения CI соберёт образ. |
 | [TASK-007](../tasks/backlog/TASK-007.md) | Воркера запускает `python -m enot_api.cli worker`. CI передаёт задание реальному воркеру и проверяет локальный fallback. Для TASK-007 предстоит подключить внешний адаптер и его проверки, затем передать сценарий TASK-008. |
