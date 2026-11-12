@@ -5,8 +5,13 @@
 !frontend/**
 !analysis/
 !analysis/TASK-003/
-!analysis/TASK-003/calculator/
-!analysis/TASK-003/calculator/**
+!analysis/TASK-003/**
+!research/
+!research/TASK-002/
+!research/TASK-002/**
+!architecture/
+!architecture/TASK-004/
+!architecture/TASK-004/**
 
 # Exclude local secrets and generated files even inside allowed paths.
 **/.env

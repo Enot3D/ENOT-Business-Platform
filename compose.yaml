@@ -36,19 +36,31 @@ services:
       db:
         condition: service_healthy
 
+  seed:
+    profiles: [api, web, worker]
+    build: *backend-build
+    environment: *backend-environment
+    command: ["python", "-m", "enot_api.cli", "import"]
+    networks: [data]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   api:
     profiles: [api, web]
     build: *backend-build
     environment:
       <<: *backend-environment
       APP_ORIGIN: http://localhost:${WEB_PORT:-3000}
-    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+      APP_SIGNING_KEY: ${APP_SIGNING_KEY:-}
+      APP_COOKIE_SECURE: "false"
+    command: ["uvicorn", "enot_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
     networks: [data, web]
     depends_on:
-      migrate:
+      seed:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/health/ready', timeout=2).close()"]
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/readyz', timeout=2).close()"]
       interval: 10s
       timeout: 3s
       retries: 6
@@ -57,16 +69,14 @@ services:
   worker:
     profiles: [worker]
     build: *backend-build
-    environment:
-      <<: *backend-environment
-      WORKER_HEARTBEAT_FILE: /tmp/enot-worker.heartbeat
-    command: ["sh", "-ec", "rm -f \"$$WORKER_HEARTBEAT_FILE\"; exec python -m app.worker"]
+    environment: *backend-environment
+    command: ["python", "-m", "enot_api.cli", "worker"]
     networks: [data]
     depends_on:
-      migrate:
+      seed:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD", "python", "-c", "import os, time; from pathlib import Path; age = time.time() - Path(os.environ['WORKER_HEARTBEAT_FILE']).stat().st_mtime; raise SystemExit(not 0 <= age <= 45)"]
+      test: ["CMD", "python", "-c", "from sqlalchemy import text; from enot_api.db import session_factory; session = session_factory()(); session.execute(text('SELECT 1')); session.close()"]
       interval: 10s
       timeout: 3s
       retries: 5
@@ -77,7 +87,9 @@ services:
     build:
       <<: *backend-build
       target: test
-    environment: *backend-environment
+    environment:
+      <<: *backend-environment
+      TEST_DATABASE_URL: postgresql+psycopg://enot_app:${DB_APP_PASSWORD:?Set DB_APP_PASSWORD in .env}@db:5432/enot_test
     networks: [data]
     depends_on:
       db:

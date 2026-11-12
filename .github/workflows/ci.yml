@@ -43,10 +43,19 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Generate disposable local database credentials
+      # Verify PR #5 with TASK-005 before either PR is merged. Other runs use their own sources.
+      - name: Fetch pinned TASK-005 sources for PR integration
+        if: ${{ github.event.pull_request.number == 5 && hashFiles('backend/requirements.txt') == '' }}
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: 6986a18a6483c7133de28f8076eb45949d7775d6
+          path: task-005-checkout
+          sparse-checkout: backend
+          persist-credentials: false
+      - name: Generate disposable local credentials and signing key
         run: |
-          for variable in POSTGRES_PASSWORD DB_APP_PASSWORD; do
-            value="$(openssl rand -hex 24)"
+          for variable in POSTGRES_PASSWORD DB_APP_PASSWORD APP_SIGNING_KEY; do
+            value="$(openssl rand -hex 32)"
             echo "::add-mask::$value"
             printf '%s=%s\n' "$variable" "$value" >> "$GITHUB_ENV"
           done
@@ -56,19 +65,28 @@ jobs:
           docker compose --profile '*' config --quiet
       - name: Check PostgreSQL, health, persistence and restore
         run: bash infra/postgres/smoke.sh
-      - name: Check backend syntax, migrations, runtime OpenAPI and pytest
+      - name: Check backend syntax, migrations, import, API, worker and pytest
         run: |
+          if [[ ! -d backend && -d task-005-checkout/backend ]]; then
+            mv task-005-checkout/backend backend
+          fi
           if [[ ! -d backend ]]; then
             echo "::notice::Backend integration awaits TASK-005 (backend/ absent)."
             exit 0
           fi
 
-          docker compose --profile api up -d --build --wait --wait-timeout 120 api
+          docker compose --profile api --profile worker up -d --build --wait --wait-timeout 120 api worker
           docker compose exec -T api python -m compileall -q .
           docker compose exec -T api alembic upgrade head
           docker compose exec -T api alembic check
           docker compose exec -T api python -c 'import sys; from urllib.request import urlopen; sys.stdout.buffer.write(urlopen("http://127.0.0.1:8000/openapi.json", timeout=5).read())' > "$RUNNER_TEMP/enot-openapi.json"
           docker run --rm -v "$RUNNER_TEMP/enot-openapi.json:/spec.json:ro" python:3.12-slim-bookworm sh -ec 'pip install --quiet openapi-spec-validator==0.8.5; openapi-spec-validator /spec.json'
+          first_import="$(docker compose logs --no-log-prefix --no-color seed)"
+          repeated_import="$(docker compose exec -T api python -m enot_api.cli import)"
+          test -n "$first_import" && test "$first_import" = "$repeated_import"
+          echo "Repeated import returned the same release ID and manifest: $repeated_import"
+          docker compose exec -T api python - < infra/backend-smoke.py
+          docker compose exec -T db createdb -U postgres -O enot_app enot_test
           docker compose --profile ci run --build --rm backend-tests
       - name: Build frontend when its sources are present
         if: ${{ !cancelled() }}
@@ -83,7 +101,7 @@ jobs:
         if: failure()
         run: |
           docker compose --profile '*' ps --all
-          docker compose --profile '*' logs --no-color --tail 80 db migrate api
+          docker compose --profile '*' logs --no-color --tail 80 db migrate seed api worker
       - name: Remove disposable CI environment
         if: always()
         run: docker compose --profile '*' down --volumes --remove-orphans
