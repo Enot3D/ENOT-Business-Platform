@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from . import models as m
 from . import schemas as s
+from .analyst import PROMPT_VERSION
 from .catalog import (
     Cursor,
     Limit,
@@ -33,7 +34,6 @@ from .security import (
 
 router = APIRouter()
 EMPTY_SCOPE = UUID(int=0)
-PROMPT_VERSION = "task-005-local-v1"
 TERMINAL = {"succeeded", "insufficient_data", "fallback", "failed"}
 Resource = TypeVar("Resource", m.Project, m.Report, m.Interpretation)
 
