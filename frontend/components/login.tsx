@@ -3,7 +3,7 @@
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { Brand, useWorkspace } from "./workspace";
 import { Failure, Loading } from "./states";
 
@@ -41,9 +41,15 @@ export function Login({ returnTo }: { returnTo?: string }) {
     setBusy(true);
     setError(undefined);
     try {
-      const loggedIn = await api("post", (firstAccount ? "/bootstrap" : "/session"), {
-        body: { login: String(fields.get("login")), password: String(fields.get("password")) },
-      });
+      const credentials = { login: String(fields.get("login")), password: String(fields.get("password")) };
+      const loggedIn = firstAccount ? await (async () => {
+        const response = await fetch("/api/v1/bootstrap", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(credentials) });
+        if (!response.ok) {
+          const payload = await response.json().catch(() => ({}));
+          throw new ApiError(response.status, payload.code ?? "bootstrap_failed");
+        }
+        return response.json();
+      })() : await api("post", "/session", { body: credentials });
       authenticate(loggedIn);
       router.replace(target);
     } catch (error) {
