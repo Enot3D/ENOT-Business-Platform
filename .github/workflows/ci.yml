@@ -64,7 +64,10 @@ jobs:
           docker compose config --quiet
           docker compose --profile '*' config --quiet
       - name: Check PostgreSQL, health, persistence and restore
-        run: bash infra/postgres/smoke.sh
+        run: |
+          bash infra/postgres/smoke.sh
+          # Backend migrations and schema checks start with an empty database.
+          docker compose down --volumes
       - name: Check backend syntax, migrations, import, API, worker and pytest
         run: |
           if [[ ! -d backend && -d task-005-checkout/backend ]]; then
