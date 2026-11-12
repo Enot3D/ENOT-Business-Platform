@@ -35,7 +35,7 @@ test("pilot catalog, evidence, comparison, analysis and saved report", async ({ 
     await passwordField.fill(password);
     await page.getByLabel("Подтверждение пароля").fill("Different12345");
     await page.getByRole("button", { name: "Зарегистрироваться" }).click();
-    await expect(page.getByRole("alert")).toContainText("Пароли не совпадают.");
+    await expect(page.getByRole("alert").filter({ hasText: "Пароли не совпадают." })).toBeVisible();
     await fitsViewport(page);
     await page.getByLabel("Подтверждение пароля").fill(password);
     await page.getByRole("button", { name: "Зарегистрироваться" }).click();
