@@ -1,0 +1,26 @@
+**
+!backend/
+!backend/**
+!frontend/
+!frontend/**
+!analysis/
+!analysis/TASK-003/
+!analysis/TASK-003/calculator/
+!analysis/TASK-003/calculator/**
+
+# Exclude local secrets and generated files even inside allowed paths.
+**/.env
+**/.env.*
+**/.npmrc
+**/.git
+**/*.pem
+**/*.key
+**/*.dump
+**/*.pgdump
+**/backups
+**/__pycache__
+**/.venv
+**/.pytest_cache
+**/node_modules
+**/.next
+**/out
