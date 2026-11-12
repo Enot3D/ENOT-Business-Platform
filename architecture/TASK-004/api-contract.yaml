@@ -13,7 +13,7 @@ paths:
   /session:
     post:
       operationId: login
-      description: Создать сессию и вернуть CSRF-токен; Set-Cookie с непрозрачной сессией.
+      description: Войти по email или существующему логину и вернуть CSRF-токен; Set-Cookie с непрозрачной сессией.
       responses:
         '200':
           description: Успешный ответ
@@ -72,6 +72,116 @@ paths:
         required: true
         schema:
           type: string
+  /register:
+    post:
+      operationId: register
+      description: Зарегистрировать пользователя по email и установить сессию.
+      responses:
+        '201':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Registration'
+      security: []
+  /profile:
+    get:
+      operationId: getProfile
+      description: Прочитать имя и email текущего пользователя.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+    patch:
+      operationId: updateProfile
+      description: Изменить отображаемое имя.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Profile'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProfileName'
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+  /profile/password:
+    post:
+      operationId: changePassword
+      description: Проверить текущий пароль, заменить его и выдать новую сессию.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PasswordChange'
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
   /datasets/current:
     get:
       operationId: getCurrentDataset
@@ -115,6 +225,13 @@ paths:
         '503':
           $ref: '#/components/responses/Error503'
       parameters:
+      - name: q
+        in: query
+        required: false
+        description: Подстрока в названии или сегменте ниши, без учёта регистра.
+        schema:
+          type: string
+          maxLength: 100
       - name: dataset_id
         in: query
         required: false
@@ -166,6 +283,39 @@ paths:
         schema:
           type: boolean
           default: false
+  /finance/calculate:
+    post:
+      operationId: calculateFinance
+      description: Рассчитать пользовательский месячный финансовый сценарий в целых рублях.
+      responses:
+        '200':
+          description: Результат расчёта
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FinanceCalculation'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinanceInputs'
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
   /niches/{niche_id}:
     get:
       operationId: getNiche
@@ -767,12 +917,62 @@ components:
         login:
           type: string
           minLength: 1
-          maxLength: 128
+          maxLength: 254
         password:
           type: string
           minLength: 1
           maxLength: 256
       additionalProperties: false
+    Registration:
+      type: object
+      required: [name, email, password]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+        email:
+          type: string
+          format: email
+          maxLength: 254
+        password:
+          type: string
+          minLength: 12
+          maxLength: 256
+          description: Должен содержать букву и цифру.
+    ProfileName:
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 80
+    Profile:
+      type: object
+      required: [name, email]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        email:
+          type: [string, 'null']
+    PasswordChange:
+      type: object
+      required: [current_password, password]
+      additionalProperties: false
+      properties:
+        current_password:
+          type: string
+          minLength: 1
+          maxLength: 256
+        password:
+          type: string
+          minLength: 12
+          maxLength: 256
+          description: Должен содержать букву и цифру.
     Session:
       type: object
       required:
@@ -1232,6 +1432,44 @@ components:
           - type: string
           - type: 'null'
       additionalProperties: false
+    FinanceInputs:
+      type: object
+      required: [price, variable, fixed, volume]
+      additionalProperties: false
+      properties:
+        price:
+          type: integer
+          minimum: 0
+          maximum: 10000000
+        variable:
+          type: integer
+          minimum: 0
+          maximum: 10000000
+        fixed:
+          type: integer
+          minimum: 0
+          maximum: 10000000
+        volume:
+          type: integer
+          minimum: 0
+          maximum: 10000000
+    FinanceCalculation:
+      type: object
+      required: [revenue, variable_total, fixed, contribution, unit_margin, break_even]
+      additionalProperties: false
+      properties:
+        revenue:
+          type: integer
+        variable_total:
+          type: integer
+        fixed:
+          type: integer
+        contribution:
+          type: integer
+        unit_margin:
+          type: integer
+        break_even:
+          type: [integer, 'null']
     Finance:
       type: object
       required:

@@ -7,19 +7,17 @@ import yaml
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy import text, select
+from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from . import catalog, research
+from . import accounts, catalog, research
 from . import schemas as s
 from .scoring import ROOT
 from .security import APIError, COOKIE, PREFIX, Current, Db, Writer, login, settings
-from .db import now, transaction_lock
-from .models import User
-from .security import PASSWORD_HASHER, origin_allowed
+from .db import now
 
 LOGGER = logging.getLogger("enot.api")
 MAX_REQUEST_BYTES = 32_768
@@ -69,7 +67,7 @@ class RequestLimits:
                     headers["Cache-Control"] = "no-store"
             await send(message)
 
-        if not is_api or scope["method"] not in {"POST", "DELETE"}:
+        if not is_api or scope["method"] not in {"POST", "PATCH", "DELETE"}:
             await self.app(scope, receive, send_with_headers)
             return
 
@@ -146,23 +144,10 @@ def liveness() -> dict[str, str]:
 
 @app.get("/readyz", include_in_schema=False)
 def readiness(db: Db) -> dict[str, str]:
-    db.execute(text("SELECT 1 FROM dataset_versions LIMIT 1"))
+    db.execute(text("SELECT email FROM users LIMIT 0"))
+    if db.execute(text("SELECT 1 FROM dataset_versions LIMIT 1")).first() is None:
+        raise APIError(503, "dataset_unavailable", "Published dataset is required")
     return {"status": "ready"}
-
-
-@app.post(PREFIX + "/bootstrap", status_code=200, include_in_schema=False)
-def bootstrap_first_user(body: s.Login, request: Request, response: Response, db: Db) -> s.Session:
-    # Only the first account can be created through this endpoint.
-    if not origin_allowed(request):
-        raise APIError(403, "forbidden", "Invalid origin")
-    if not 12 <= len(body.password) <= 256:
-        raise APIError(422, "validation_error", "Password must contain 12–256 characters")
-    transaction_lock(db, "bootstrap-first-user")
-    if db.scalar(select(User.id).limit(1)) is not None:
-        raise APIError(403, "bootstrap_closed", "Initial account has already been created")
-    db.add(User(login=body.login, password_hash=PASSWORD_HASHER.hash(body.password), enabled=True))
-    db.commit()
-    return login(body, request, response, db)
 
 
 app.post(PREFIX + "/session", operation_id="login")(login)
@@ -184,5 +169,6 @@ def logout(auth: Writer, db: Db) -> Response:
     return response
 
 
+app.include_router(accounts.router, prefix=PREFIX)
 app.include_router(catalog.router, prefix=PREFIX)
 app.include_router(research.router, prefix=PREFIX)

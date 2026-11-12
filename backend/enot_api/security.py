@@ -13,6 +13,7 @@ from uuid import UUID
 
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
+from email_validator import EmailNotValidError, validate_email
 from fastapi import Depends, Header, Request, Response
 from sqlalchemy import delete, select
 from sqlalchemy.dialects.postgresql import insert
@@ -129,8 +130,7 @@ class Auth:
 
 
 def authenticate(request: Request, db: Db) -> Auth:
-    ip = request.client.host if request.client else "unknown"
-    rate_limit({f"api-ip:{ip}": 600})
+    rate_limit({f"api-ip:{client_ip(request)}": 600})
     token = request.cookies.get(COOKIE, "")
     if not token or len(token) > 128:
         raise APIError(401, "unauthenticated", "Valid session required")
@@ -167,22 +167,49 @@ Writer = Annotated[Auth, Depends(authorize_write)]
 
 
 def login(body: s.Login, request: Request, response: Response, db: Db) -> s.Session:
-    login_name = body.login
-    ip = request.client.host if request.client else "unknown"
-    rate_limit({f"login-ip:{ip}": 20, f"login-account:{login_name}": 6})
+    login_name = body.login.strip().lower()
     if not origin_allowed(request):
         raise APIError(401, "invalid_credentials", "Invalid credentials or origin")
-    user = db.scalar(select(User).where(User.login == login_name))
+    rate_limit({f"login-ip:{client_ip(request)}": 20, f"login-account:{login_name}": 6})
     try:
-        PASSWORD_HASHER.verify(
-            user.password_hash if user else DUMMY_HASH, body.password
-        )
-    except VerifyMismatchError:
-        raise APIError(401, "invalid_credentials", "Invalid credentials") from None
+        email = normalize_email(login_name)
+    except EmailNotValidError:
+        email = None
+    user = (
+        db.scalar(select(User).where(User.email == email).with_for_update())
+        if email
+        else None
+    )
+    if user is None:
+        user = db.scalar(select(User).where(User.login == body.login).with_for_update())
+    if not password_matches(user.password_hash if user else DUMMY_HASH, body.password):
+        raise APIError(401, "invalid_credentials", "Invalid credentials")
     if not user or not user.enabled:
         raise APIError(401, "invalid_credentials", "Invalid credentials")
     if PASSWORD_HASHER.check_needs_rehash(user.password_hash):
         user.password_hash = PASSWORD_HASHER.hash(body.password)
+    return start_session(user, request, response, db)
+
+
+def normalize_email(value: str) -> str:
+    email = validate_email(value, check_deliverability=False)
+    return f"{email.local_part.lower()}@{email.ascii_domain}"
+
+
+def client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def password_matches(password_hash: str, password: str) -> bool:
+    try:
+        return PASSWORD_HASHER.verify(password_hash, password)
+    except VerifyMismatchError:
+        return False
+
+
+def start_session(
+    user: User, request: Request, response: Response, db: Session
+) -> s.Session:
     old = request.cookies.get(COOKIE, "")
     if old and len(old) <= 128:
         existing = db.scalar(

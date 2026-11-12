@@ -4,6 +4,8 @@ import { AlertCircle, LoaderCircle, Search } from "lucide-react";
 import { ApiError } from "@/lib/api";
 
 const messages: Record<string, string> = {
+  account_exists: "Аккаунт с этой почтой уже существует. Войдите в него.",
+  wrong_current_password: "Текущий пароль указан неверно.",
   csrf_failed: "Защита запроса отклонила действие. Обновите страницу и проверьте адрес входа.",
   invalid_credentials: "Не удалось войти. Проверьте логин и пароль.",
   unauthenticated: "Сессия завершилась. Войдите снова.",

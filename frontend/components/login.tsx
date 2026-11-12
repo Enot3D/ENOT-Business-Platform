@@ -1,9 +1,11 @@
 "use client";
 
 import { ArrowRight, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { PasswordField } from "./account-fields";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { api, ApiError } from "@/lib/api";
+import { api } from "@/lib/api";
 import { Brand, useWorkspace } from "./workspace";
 import { Failure, Loading } from "./states";
 
@@ -15,7 +17,7 @@ function destination(value?: string) {
   const origin = "https://enot.invalid";
   try {
     const url = new URL(value, origin);
-    if (url.origin === origin && /^\/(?:$|(?:niches|research|compare)(?:\/|$))/.test(url.pathname)) {
+    if (url.origin === origin && /^\/(?:$|(?:niches|research|compare|profile)(?:\/|$))/.test(url.pathname)) {
       return url.pathname + url.search;
     }
   } catch {
@@ -26,10 +28,9 @@ function destination(value?: string) {
 
 export function Login({ returnTo }: { returnTo?: string }) {
   const router = useRouter();
-  const { session, sessionError, authenticate } = useWorkspace();
+  const { session, sessionError, retrySession, authenticate } = useWorkspace();
   const target = destination(returnTo);
   const [busy, setBusy] = useState(false);
-  const [firstAccount, setFirstAccount] = useState(false);
   const [error, setError] = useState<unknown>();
 
   useEffect(() => { if (session) router.replace(target); }, [router, session, target]);
@@ -41,15 +42,9 @@ export function Login({ returnTo }: { returnTo?: string }) {
     setBusy(true);
     setError(undefined);
     try {
-      const credentials = { login: String(fields.get("login")), password: String(fields.get("password")) };
-      const loggedIn = firstAccount ? await (async () => {
-        const response = await fetch("/api/v1/bootstrap", { method: "POST", credentials: "same-origin", headers: { "Content-Type": "application/json" }, body: JSON.stringify(credentials) });
-        if (!response.ok) {
-          const payload = await response.json().catch(() => ({}));
-          throw new ApiError(response.status, payload.code ?? "bootstrap_failed");
-        }
-        return response.json();
-      })() : await api("post", "/session", { body: credentials });
+      const loggedIn = await api("post", "/session", {
+        body: { login: String(fields.get("login")), password: String(fields.get("password")) },
+      });
       authenticate(loggedIn);
       router.replace(target);
     } catch (error) {
@@ -61,14 +56,14 @@ export function Login({ returnTo }: { returnTo?: string }) {
 
   return <main className="auth-screen"><section className="login-card">
     <Brand href="/login" />
-    <div className="login-title"><ShieldCheck size={25} /><h1>{firstAccount ? "Создать первый аккаунт" : "Вход в платформу"}</h1><p>Доступ к каталогу ниш и сохранённым исследованиям.</p></div>
-    {session === undefined && !sessionError || session ? <Loading label="Проверяем сессию…" /> :
+    <div className="login-title"><ShieldCheck size={25} /><h1>Вход в платформу</h1><p>Доступ к каталогу ниш и сохранённым исследованиям.</p></div>
+    {sessionError ? <Failure error={sessionError} retry={retrySession} /> : session === undefined || session ? <Loading label="Проверяем сессию…" /> :
       <form className="form-stack" onSubmit={submit}>
         {error ? <Failure error={error} /> : null}
-        <label>Логин<input name="login" autoComplete="username" required maxLength={128} /></label>
-        <label>Пароль<input name="password" type="password" autoComplete="current-password" required maxLength={256} /></label>
-        <button className="button primary" disabled={busy}>{busy ? "Подождите…" : firstAccount ? "Создать аккаунт и войти" : "Войти"} <ArrowRight size={17} /></button>
-        <button type="button" className="button" disabled={busy} onClick={() => { setFirstAccount(!firstAccount); setError(undefined); }}>{firstAccount ? "Уже есть аккаунт? Войти" : "Первый запуск? Создать аккаунт"}</button>
+        <label>Электронная почта или логин<input name="login" inputMode="email" autoComplete="username" autoCapitalize="none" spellCheck={false} required maxLength={254} /></label>
+        <PasswordField label="Пароль" name="password" autoComplete="current-password" />
+        <button className="button primary" disabled={busy}>{busy ? "Входим…" : "Войти"} <ArrowRight size={17} /></button>
+        <Link className="text-link" href="/register">Зарегистрироваться</Link>
       </form>}
   </section></main>;
 }

@@ -106,19 +106,23 @@ export function Catalog() {
   const filters = readFilters(new URLSearchParams(serialized));
   const cursor = params.get("cursor") || undefined;
   const pinned = params.get("dataset_id") || undefined;
+  const search = params.get("q")?.trim().slice(0, 100) || undefined;
   const dataset = useResource(loadDataset);
   const loadNiches = useCallback((signal: AbortSignal) => api("get", "/niches", {
-    query: { ...readFilters(new URLSearchParams(serialized)), dataset_id: pinned, cursor, limit: 20 }, signal,
-  }), [cursor, pinned, serialized]);
+    query: { ...readFilters(new URLSearchParams(serialized)), dataset_id: pinned, cursor, q: search, limit: 20 }, signal,
+  }), [cursor, pinned, search, serialized]);
   const results = useResource(loadNiches);
 
-  function apply(next: Filters) {
+  function apply(next: Filters, term = search) {
     const query = filterQuery(next);
+    if (term) query.set("q", term);
     router.push(query.size ? `/niches?${query}` : "/niches");
   }
 
   const page = results.data;
-  const more = new URLSearchParams(serialized);
+  const first = new URLSearchParams(serialized);
+  if (search) first.set("q", search);
+  const more = new URLSearchParams(first);
   if (page?.next_cursor) {
     more.set("dataset_id", page.dataset_id);
     more.set("cursor", page.next_cursor);
@@ -131,6 +135,13 @@ export function Catalog() {
       <span>{page ? `Обновлено ${date(page.updated_at)} · Модель ${page.model_version}` : dataset.data ? `Опубликован ${date(dataset.data.published_at)}` : "География выпуска загружается вместе с данными"}</span>
     </div>
     {dataset.error ? <Failure error={dataset.error} retry={dataset.retry} /> : null}
+    <form className="catalog-search" role="search" key={search} onSubmit={(event) => {
+      event.preventDefault();
+      apply(filters, String(new FormData(event.currentTarget).get("q")).trim());
+    }}>
+      <label>Поиск по каталогу<input type="search" name="q" defaultValue={search} maxLength={100} placeholder="Название или сегмент" /></label>
+      <button className="button">Найти</button>
+    </form>
     <CatalogFilters filterKey={serialized} filters={filters} dataset={dataset.data} apply={apply} />
     <div className="section-heading"><h2>Ниши</h2><span aria-live="polite">{page ? `На странице: ${page.items.length}${page.next_cursor ? " · есть ещё" : ""}` : null}</span></div>
     {results.pending && <Loading />}
@@ -138,7 +149,7 @@ export function Catalog() {
     {page && (page.items.length
       ? <div className="niche-grid">{page.items.map((niche) => <CatalogCard key={niche.id} niche={niche} filters={filters} />)}</div>
       : <Empty title="По этим фильтрам нет ниш"><Link className="button" href="/niches?country=RU">Показать данные по России</Link><Link className="text-link" href="/niches">Сбросить фильтры</Link></Empty>)}
-    {(cursor || page?.next_cursor) && <nav className="pagination" aria-label="Страницы каталога">{cursor && <Link className="button" href={serialized ? `/niches?${serialized}` : "/niches"}>Первая страница</Link>}{page?.next_cursor && <Link className="button" href={`/niches?${more}`}>Следующая страница <ArrowRight size={16} /></Link>}</nav>}
+    {(cursor || page?.next_cursor) && <nav className="pagination" aria-label="Страницы каталога">{cursor && <Link className="button" href={first.size ? `/niches?${first}` : "/niches"}>Первая страница</Link>}{page?.next_cursor && <Link className="button" href={`/niches?${more}`}>Следующая страница <ArrowRight size={16} /></Link>}</nav>}
     <CompareBar filters={filters} />
   </>;
 }

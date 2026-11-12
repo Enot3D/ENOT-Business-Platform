@@ -2,7 +2,7 @@ import argparse
 from getpass import getpass
 from time import sleep
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from .db import session_factory, transaction_lock
 from .importer import publish
@@ -46,8 +46,12 @@ def main() -> None:
                 "Repeat password: "
             ):
                 parser.error("Use a matching password of 12–256 characters")
-            transaction_lock(db, f"create-user:{args.login}")
-            if db.scalar(select(User.id).where(User.login == args.login)):
+            transaction_lock(db, f"account-email:{args.login.lower()}")
+            if db.scalar(
+                select(User.id).where(
+                    or_(User.login == args.login, User.email == args.login.lower())
+                )
+            ):
                 parser.error("Login already exists")
             db.add(User(login=args.login, password_hash=PASSWORD_HASHER.hash(password)))
             message = "Account created"

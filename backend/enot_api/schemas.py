@@ -7,6 +7,7 @@ from uuid import UUID
 from pydantic import (
     BaseModel,
     ConfigDict,
+    EmailStr,
     Field,
     HttpUrl,
     field_validator,
@@ -25,7 +26,7 @@ class Error(DTO):
 
 
 class Login(DTO):
-    login: Annotated[str, Field(min_length=1, max_length=128)]
+    login: Annotated[str, Field(min_length=1, max_length=254)]
     password: Annotated[str, Field(min_length=1, max_length=256)]
 
     @field_validator("login")
@@ -40,6 +41,44 @@ class Session(DTO):
     user_id: UUID
     csrf_token: str
     expires_at: datetime
+
+
+class ProfileName(DTO):
+    name: Annotated[str, Field(min_length=1, max_length=80)]
+
+    @field_validator("name")
+    @classmethod
+    def valid_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value or any(not char.isprintable() for char in value):
+            raise ValueError("Invalid name")
+        return value
+
+
+class NewPassword(DTO):
+    password: Annotated[str, Field(min_length=12, max_length=256)]
+
+    @field_validator("password")
+    @classmethod
+    def strong_password(cls, value: str) -> str:
+        if not any(char.isalpha() for char in value) or not any(
+            char.isdecimal() for char in value
+        ):
+            raise ValueError("Password must contain a letter and a digit")
+        return value
+
+
+class Registration(ProfileName, NewPassword):
+    email: Annotated[EmailStr, Field(max_length=254)]
+
+
+class PasswordChange(NewPassword):
+    current_password: Annotated[str, Field(min_length=1, max_length=256)]
+
+
+class Profile(DTO):
+    name: str
+    email: str | None
 
 
 class CatalogFilters(DTO):
@@ -174,6 +213,25 @@ class Criterion(DTO):
     quality: Annotated[int, Field(ge=0, le=3)]
     claim_ids: list[UUID]
     gap_reason: str | None
+
+
+FinanceInput = Annotated[int, Field(ge=0, le=10_000_000, strict=True)]
+
+
+class FinanceInputs(DTO):
+    price: FinanceInput
+    variable: FinanceInput
+    fixed: FinanceInput
+    volume: FinanceInput
+
+
+class FinanceCalculation(DTO):
+    revenue: int
+    variable_total: int
+    fixed: int
+    contribution: int
+    unit_margin: int
+    break_even: int | None
 
 
 class Finance(DTO):

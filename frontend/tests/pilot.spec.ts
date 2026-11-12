@@ -6,9 +6,13 @@ async function fitsViewport(page: Page) {
 }
 
 test("pilot catalog, evidence, comparison, analysis and saved report", async ({ page }, info) => {
-  const login = process.env.ENOT_E2E_LOGIN;
-  const password = process.env.ENOT_E2E_PASSWORD;
+  const phone = info.project.name === "phone";
+  const login = phone ? `qa-${randomUUID()}@enot.example.com` : process.env.ENOT_E2E_LOGIN;
+  const password = phone ? `QA1-${randomUUID()}` : process.env.ENOT_E2E_PASSWORD;
   if (!login || !password) throw new Error("Set ENOT_E2E_LOGIN and ENOT_E2E_PASSWORD for a disposable account");
+  const loginField = page.getByLabel("Электронная почта или логин");
+  const passwordField = page.getByLabel("Пароль", { exact: true });
+  const enter = page.getByRole("button", { name: "Войти", exact: true });
 
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -23,16 +27,41 @@ test("pilot catalog, evidence, comparison, analysis and saved report", async ({ 
     await page.goto(catalogUrl);
     await expect(page).toHaveURL(`/login?returnTo=${encodeURIComponent(catalogUrl)}`);
   }
-  await page.getByLabel("Логин").fill(login);
-  if (info.project.name === "desktop") {
-    await page.getByLabel("Пароль").fill("wrong-password");
-    await page.getByRole("button", { name: "Войти" }).click();
-    await expect(page.getByRole("alert").filter({ hasText: "Не удалось войти" })).toBeVisible();
-    await expect(page.getByRole("alert").filter({ hasText: "Не удалось войти" })).toContainText("ID запроса");
+  if (phone) {
+    await page.getByRole("link", { name: "Зарегистрироваться" }).click();
+    await expect(page).toHaveURL("/register");
+    await page.getByLabel("Имя пользователя").fill("Мобильный QA");
+    await page.getByLabel("Электронная почта").fill(login);
+    await passwordField.fill(password);
+    await page.getByLabel("Подтверждение пароля").fill("Different12345");
+    await page.getByRole("button", { name: "Зарегистрироваться" }).click();
+    await expect(page.getByRole("alert")).toContainText("Пароли не совпадают.");
+    await fitsViewport(page);
+    await page.getByLabel("Подтверждение пароля").fill(password);
+    await page.getByRole("button", { name: "Зарегистрироваться" }).click();
+    await expect(page).toHaveURL("/");
+    await page.reload();
+    await expect(page.getByRole("link", { name: "Личный кабинет" })).toBeVisible();
+    await page.getByRole("link", { name: "Личный кабинет" }).click();
+    await expect(page.getByText(login, { exact: true })).toBeVisible();
+    await page.getByLabel("Имя пользователя").fill("Мобильный QA 2");
+    await page.getByRole("button", { name: "Сохранить имя" }).click();
+    await expect(page.getByText("Имя сохранено.")).toBeVisible();
+    await expect(page.getByLabel("Имя пользователя")).toHaveValue("Мобильный QA 2");
+    await fitsViewport(page);
+    await page.goto(catalogUrl);
+  } else {
+    await loginField.fill(login);
+    if (desktop) {
+      await passwordField.fill("wrong-password");
+      await enter.click();
+      await expect(page.getByRole("alert").filter({ hasText: "Не удалось войти" })).toBeVisible();
+      await expect(page.getByRole("alert").filter({ hasText: "Не удалось войти" })).toContainText("ID запроса");
+    }
+    await passwordField.fill(password);
+    await enter.click();
+    await expect(page).toHaveURL(desktop ? "/" : catalogUrl);
   }
-  await page.getByLabel("Пароль").fill(password);
-  await page.getByRole("button", { name: "Войти" }).click();
-  await expect(page).toHaveURL(desktop ? "/" : catalogUrl);
 
   if (desktop) {
     for (const returnTo of ["https://example.com/niches", "//example.com/niches", "//enot.invalid/niches", "/login", "/niches/..//example.com"]) {
@@ -47,14 +76,22 @@ test("pilot catalog, evidence, comparison, analysis and saved report", async ({ 
   await expect(page.getByRole("article")).toHaveCount(20);
   await fitsViewport(page);
 
-  const phone = info.project.name === "phone";
+  if (phone) {
+    const firstTitle = await page.getByRole("article").first().getByRole("heading").innerText();
+    const search = page.getByRole("searchbox", { name: "Поиск по каталогу" });
+    await search.fill(firstTitle);
+    await page.getByRole("button", { name: "Найти" }).click();
+    await expect(page.getByRole("article")).toHaveCount(1);
+    await search.clear();
+    await page.getByRole("button", { name: "Найти" }).click();
+    await expect(page.getByRole("article")).toHaveCount(20);
+  }
   const filterToggle = page.getByText("Фильтры каталога", { exact: true });
   const region = page.getByLabel("Регион");
   const budget = page.getByLabel("Бюджет, ₽");
   if (phone) {
     await expect(region).toBeHidden();
-    await filterToggle.focus();
-    await page.keyboard.press("Enter");
+    await filterToggle.click();
   }
   await expect(region).toBeVisible();
   await expect(page.getByLabel("Страна")).toHaveValue("RU");
@@ -111,6 +148,17 @@ test("pilot catalog, evidence, comparison, analysis and saved report", async ({ 
   await expect(base.getByRole("cell").last()).toHaveText("4");
   await expect(page.getByRole("region", { name: "Стресс-проверки" }).getByRole("row")).toHaveCount(7);
   await fitsViewport(page);
+
+  if (phone) {
+    await page.getByText("Свой финансовый сценарий", { exact: true }).click();
+    await page.getByLabel("Цена за единицу, ₽").fill("5000");
+    await page.getByLabel("Себестоимость единицы, ₽").fill("1000");
+    await page.getByLabel("Постоянные расходы в месяц, ₽").fill("10000");
+    await page.getByLabel("Продажи в месяц, ед.").fill("4");
+    await page.getByRole("button", { name: "Рассчитать сценарий" }).click();
+    await expect(page.locator(".finance-calculator")).toContainText(/6\s000\s₽/);
+    await expect(page.locator(".finance-calculator")).toContainText("3 ед. в месяц");
+  }
 
   const evidence = page.locator("#evidence").getByRole("button", { name: "Доказательство 1", exact: true }).filter({ visible: true }).first();
   await evidence.focus();
@@ -192,5 +240,15 @@ test("pilot catalog, evidence, comparison, analysis and saved report", async ({ 
   expect(await page.context().cookies(new URL("/api/v1/session", reportUrl).href)).not.toContainEqual(expect.objectContaining({ name: "enot_session" }));
   await page.goto(reportUrl);
   await expect(page.getByRole("heading", { name: "Вход в платформу" })).toBeVisible();
+  if (phone) {
+    await loginField.fill(login);
+    await passwordField.fill(password);
+    await page.getByRole("button", { name: "Показать пароль" }).click();
+    await expect(passwordField).toHaveAttribute("type", "text");
+    await page.getByRole("button", { name: "Скрыть пароль" }).click();
+    await enter.click();
+    await expect(page).toHaveURL(reportUrl);
+    await expect(page.getByRole("heading", { name: "Сохранённый вывод аналитика" })).toBeVisible();
+  }
   expect(errors).toEqual([]);
 });
