@@ -29,6 +29,7 @@ export function Login({ returnTo }: { returnTo?: string }) {
   const { session, sessionError, authenticate } = useWorkspace();
   const target = destination(returnTo);
   const [busy, setBusy] = useState(false);
+  const [firstAccount, setFirstAccount] = useState(false);
   const [error, setError] = useState<unknown>();
 
   useEffect(() => { if (session) router.replace(target); }, [router, session, target]);
@@ -40,7 +41,7 @@ export function Login({ returnTo }: { returnTo?: string }) {
     setBusy(true);
     setError(undefined);
     try {
-      const loggedIn = await api("post", "/session", {
+      const loggedIn = await api("post", (firstAccount ? "/bootstrap" : "/session"), {
         body: { login: String(fields.get("login")), password: String(fields.get("password")) },
       });
       authenticate(loggedIn);
@@ -54,13 +55,14 @@ export function Login({ returnTo }: { returnTo?: string }) {
 
   return <main className="auth-screen"><section className="login-card">
     <Brand href="/login" />
-    <div className="login-title"><ShieldCheck size={25} /><h1>Вход в платформу</h1><p>Доступ к каталогу ниш и сохранённым исследованиям.</p></div>
+    <div className="login-title"><ShieldCheck size={25} /><h1>{firstAccount ? "Создать первый аккаунт" : "Вход в платформу"}</h1><p>Доступ к каталогу ниш и сохранённым исследованиям.</p></div>
     {session === undefined && !sessionError || session ? <Loading label="Проверяем сессию…" /> :
       <form className="form-stack" onSubmit={submit}>
         {error ? <Failure error={error} /> : null}
         <label>Логин<input name="login" autoComplete="username" required maxLength={128} /></label>
         <label>Пароль<input name="password" type="password" autoComplete="current-password" required maxLength={256} /></label>
-        <button className="button primary" disabled={busy}>{busy ? "Входим…" : "Войти"} <ArrowRight size={17} /></button>
+        <button className="button primary" disabled={busy}>{busy ? "Подождите…" : firstAccount ? "Создать аккаунт и войти" : "Войти"} <ArrowRight size={17} /></button>
+        <button type="button" className="button" disabled={busy} onClick={() => { setFirstAccount(!firstAccount); setError(undefined); }}>{firstAccount ? "Уже есть аккаунт? Войти" : "Первый запуск? Создать аккаунт"}</button>
       </form>}
   </section></main>;
 }
