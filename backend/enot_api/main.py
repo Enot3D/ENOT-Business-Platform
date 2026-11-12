@@ -13,7 +13,7 @@ from starlette.exceptions import HTTPException
 from starlette.datastructures import MutableHeaders
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from . import catalog, research
+from . import accounts, catalog, research
 from . import schemas as s
 from .scoring import ROOT
 from .security import APIError, COOKIE, PREFIX, Current, Db, Writer, login, settings
@@ -67,7 +67,7 @@ class RequestLimits:
                     headers["Cache-Control"] = "no-store"
             await send(message)
 
-        if not is_api or scope["method"] not in {"POST", "DELETE"}:
+        if not is_api or scope["method"] not in {"POST", "PATCH", "DELETE"}:
             await self.app(scope, receive, send_with_headers)
             return
 
@@ -144,7 +144,9 @@ def liveness() -> dict[str, str]:
 
 @app.get("/readyz", include_in_schema=False)
 def readiness(db: Db) -> dict[str, str]:
-    db.execute(text("SELECT 1 FROM dataset_versions LIMIT 1"))
+    db.execute(text("SELECT email FROM users LIMIT 0"))
+    if db.execute(text("SELECT 1 FROM dataset_versions LIMIT 1")).first() is None:
+        raise APIError(503, "dataset_unavailable", "Published dataset is required")
     return {"status": "ready"}
 
 
@@ -167,5 +169,6 @@ def logout(auth: Writer, db: Db) -> Response:
     return response
 
 
+app.include_router(accounts.router, prefix=PREFIX)
 app.include_router(catalog.router, prefix=PREFIX)
 app.include_router(research.router, prefix=PREFIX)

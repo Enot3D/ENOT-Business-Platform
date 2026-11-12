@@ -78,10 +78,9 @@ docker compose --profile api run --rm migrate alembic check
 
 ```sh
 docker compose --profile web --profile worker up -d --build --wait --wait-timeout 120 frontend worker
-docker compose exec api python -m enot_api.cli create-user owner
 ```
 
-Откройте `http://localhost:3000`. При изменении `WEB_PORT` используйте новый порт и тот же хост `localhost`, который указан в `APP_ORIGIN`. Команда создания пользователя запрашивает пароль интерактивно и нужна один раз на аккаунт. Шаги браузерной проверки и команды разработки описаны в [документации frontend](../frontend/README.md).
+Откройте `http://localhost:3000`. При изменении `WEB_PORT` используйте новый порт и тот же хост `localhost`, который указан в `APP_ORIGIN`. Для создания аккаунта откройте страницу `/register`. Шаги браузерной проверки и команды разработки описаны в [документации frontend](../frontend/README.md).
 
 Локальный аналитик формирует сводку по наблюдениям и расчётам платформы. При наличии пригодных наблюдений результат имеет статус `fallback` и код `provider_disabled`. При их отсутствии возвращается `insufficient_data`. В стандартном Compose режим `local` задан явно, переменные внешнего провайдера в воркер не передаются, а его сеть `data` внутренняя. Внешний вызов возможен только после явной настройки воркера и его сетевого доступа, с утверждённой политикой, ключом и бюджетом. Перечень настроек приведён в [руководстве TASK-007](../backend/AI-ANALYST.md).
 

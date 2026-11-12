@@ -9,6 +9,7 @@ import { useResource } from "@/lib/resource";
 import { ScoreSummary } from "./catalog";
 import { Claims } from "./evidence";
 import { Finance } from "./finance";
+import { FinanceCalculator } from "./finance-calculator";
 import { ResearchWorkbench } from "./research-workbench";
 import { Failure, Loading } from "./states";
 import { CompareBar, SelectNiche } from "./workspace";
@@ -61,7 +62,7 @@ export function NichePage({ id, datasetId, filters }: { id: string; datasetId?: 
         </dl>
       </section>
       <nav className="section-links" aria-label="Разделы карточки"><a href="#finance">Экономика</a><a href="#evidence">Доказательства</a><a href="#workbench">Сохранение и ИИ</a></nav>
-      <section id="finance" className="panel content-panel"><h2>Финансовые сценарии</h2><Finance rows={detail.finance} gap={detail.finance_gap} /></section>
+      <section id="finance" className="panel content-panel"><h2>Финансовые сценарии</h2><Finance rows={detail.finance} gap={detail.finance_gap} /><FinanceCalculator base={detail.finance.find(({ code }) => code === "base")} /></section>
       <div id="evidence"><NicheEvidence detail={detail} /></div>
       <ResearchWorkbench key={`${detail.niche.dataset_id}:${detail.niche.id}`} items={[detail]} filters={filters} />
       <CompareBar filters={filters} />

@@ -1,6 +1,8 @@
 "use client";
 
 import { ArrowRight, ShieldCheck } from "lucide-react";
+import Link from "next/link";
+import { PasswordField } from "./account-fields";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "@/lib/api";
@@ -15,7 +17,7 @@ function destination(value?: string) {
   const origin = "https://enot.invalid";
   try {
     const url = new URL(value, origin);
-    if (url.origin === origin && /^\/(?:$|(?:niches|research|compare)(?:\/|$))/.test(url.pathname)) {
+    if (url.origin === origin && /^\/(?:$|(?:niches|research|compare|profile)(?:\/|$))/.test(url.pathname)) {
       return url.pathname + url.search;
     }
   } catch {
@@ -26,7 +28,7 @@ function destination(value?: string) {
 
 export function Login({ returnTo }: { returnTo?: string }) {
   const router = useRouter();
-  const { session, sessionError, authenticate } = useWorkspace();
+  const { session, sessionError, retrySession, authenticate } = useWorkspace();
   const target = destination(returnTo);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>();
@@ -55,12 +57,13 @@ export function Login({ returnTo }: { returnTo?: string }) {
   return <main className="auth-screen"><section className="login-card">
     <Brand href="/login" />
     <div className="login-title"><ShieldCheck size={25} /><h1>Вход в платформу</h1><p>Доступ к каталогу ниш и сохранённым исследованиям.</p></div>
-    {session === undefined && !sessionError || session ? <Loading label="Проверяем сессию…" /> :
+    {sessionError ? <Failure error={sessionError} retry={retrySession} /> : session === undefined || session ? <Loading label="Проверяем сессию…" /> :
       <form className="form-stack" onSubmit={submit}>
         {error ? <Failure error={error} /> : null}
-        <label>Логин<input name="login" autoComplete="username" required maxLength={128} /></label>
-        <label>Пароль<input name="password" type="password" autoComplete="current-password" required maxLength={256} /></label>
+        <label>Электронная почта или логин<input name="login" inputMode="email" autoComplete="username" autoCapitalize="none" spellCheck={false} required maxLength={254} /></label>
+        <PasswordField label="Пароль" name="password" autoComplete="current-password" />
         <button className="button primary" disabled={busy}>{busy ? "Входим…" : "Войти"} <ArrowRight size={17} /></button>
+        <Link className="text-link" href="/register">Зарегистрироваться</Link>
       </form>}
   </section></main>;
 }

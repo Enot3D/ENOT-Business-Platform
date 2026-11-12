@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from fractions import Fraction
 from itertools import combinations, groupby
 from typing import Annotated
@@ -261,6 +261,7 @@ def list_niches(
     auth: Current,
     dataset_id: UUID | None = None,
     cursor: Cursor = None,
+    q: Annotated[str | None, Query(max_length=100)] = None,
     limit: Limit = 20,
     country: Annotated[str | None, Query(pattern=r"^[A-Z]{2}$")] = None,
     region: Annotated[str | None, Query(max_length=32)] = None,
@@ -270,9 +271,11 @@ def list_niches(
 ) -> s.NichePage:
     if region is not None and country is None:
         raise invalid("country is required with region")
-    binding = fingerprint(
-        [country, region, industry, budget_rub, include_unknown_budget]
-    )
+    query = (q or "").strip().casefold()
+    cursor_fields = [country, region, industry, budget_rub, include_unknown_budget]
+    if query:
+        cursor_fields.append(query)
+    binding = fingerprint(cursor_fields)
     last, pinned = decode_cursor(cursor, "niches", binding)
     if dataset_id and pinned and dataset_id != pinned:
         raise invalid("Cursor uses a different dataset")
@@ -280,7 +283,8 @@ def list_niches(
     filtered = [
         item.view
         for item in entries(db, dataset.id).values()
-        if (country is None or country == item.view.market.country)
+        if (not query or query in f"{item.view.title} {item.view.segment}".casefold())
+        and (country is None or country == item.view.market.country)
         and (region is None or region == item.view.market.region)
         and (industry is None or industry == item.view.industry)
         and (
@@ -300,6 +304,11 @@ def list_niches(
         model_version=MODEL_VERSION,
         updated_at=dataset.published_at,
     )
+
+
+@router.post("/finance/calculate", operation_id="calculateFinance")
+def calculate_finance(body: s.FinanceInputs, auth: Writer) -> s.FinanceCalculation:
+    return s.FinanceCalculation(**asdict(calculator.finance(**body.model_dump())))
 
 
 @router.get("/niches/{niche_id}", operation_id="getNiche")

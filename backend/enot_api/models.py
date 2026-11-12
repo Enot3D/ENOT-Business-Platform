@@ -32,6 +32,8 @@ class Row(Base):
 class User(Row):
     __tablename__ = "users"
     login: Mapped[str] = mapped_column(String(128), unique=True)
+    email: Mapped[str | None] = mapped_column(String(254), unique=True)
+    display_name: Mapped[str | None] = mapped_column(String(80))
     password_hash: Mapped[str]
     enabled: Mapped[bool] = mapped_column(default=True)
     created_at: Mapped[datetime] = mapped_column(default=now)

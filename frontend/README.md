@@ -23,7 +23,7 @@ npm run typecheck
 npm run build
 ```
 
-Для сквозной проверки запустите профиль `web` и воркер, создайте одноразовый аккаунт в тестовом экземпляре и передайте его логин и пароль в `ENOT_E2E_LOGIN` и `ENOT_E2E_PASSWORD`. При другом порте укажите `ENOT_E2E_ORIGIN`. Тест создаёт и оставляет проекты в тестовой базе.
+Для сквозной проверки запустите профиль `web` и воркер, создайте одноразовый аккаунт в тестовом экземпляре и передайте его логин и пароль в `ENOT_E2E_LOGIN` и `ENOT_E2E_PASSWORD`. При другом порте укажите `ENOT_E2E_ORIGIN`. Тест оставляет созданные аккаунты и проекты в тестовой базе. Проект `phone` создаёт аккаунт сам через `/register` и может запускаться без `ENOT_E2E_LOGIN` и `ENOT_E2E_PASSWORD`. Для WebKit выполните `npx playwright install webkit` и запустите `ENOT_E2E_WEBKIT=1 npm run test:e2e -- --project=phone`.
 
 ```sh
 npx playwright install chromium

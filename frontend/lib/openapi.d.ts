@@ -14,10 +14,62 @@ export interface paths {
         /** @description Прочитать текущую сессию и CSRF-токен. */
         get: operations["getSession"];
         put?: never;
-        /** @description Создать сессию и вернуть CSRF-токен; Set-Cookie с непрозрачной сессией. */
+        /** @description Войти по email или существующему логину и вернуть CSRF-токен; Set-Cookie с непрозрачной сессией. */
         post: operations["login"];
         /** @description Отозвать текущую сессию. */
         delete: operations["logout"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/register": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Зарегистрировать пользователя по email и установить сессию. */
+        post: operations["register"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/profile": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Прочитать имя и email текущего пользователя. */
+        get: operations["getProfile"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description Изменить отображаемое имя. */
+        patch: operations["updateProfile"];
+        trace?: never;
+    };
+    "/profile/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Проверить текущий пароль, заменить его и выдать новую сессию. */
+        post: operations["changePassword"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -51,6 +103,23 @@ export interface paths {
         get: operations["listNiches"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/finance/calculate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** @description Рассчитать пользовательский месячный финансовый сценарий в целых рублях. */
+        post: operations["calculateFinance"];
         delete?: never;
         options?: never;
         head?: never;
@@ -276,6 +345,25 @@ export interface components {
             login: string;
             password: string;
         };
+        Registration: {
+            name: string;
+            /** Format: email */
+            email: string;
+            /** @description Должен содержать букву и цифру. */
+            password: string;
+        };
+        ProfileName: {
+            name: string;
+        };
+        Profile: {
+            name: string;
+            email: string | null;
+        };
+        PasswordChange: {
+            current_password: string;
+            /** @description Должен содержать букву и цифру. */
+            password: string;
+        };
         Session: {
             /** Format: uuid */
             user_id: string;
@@ -414,6 +502,20 @@ export interface components {
             quality: number;
             claim_ids: string[];
             gap_reason: string | null;
+        };
+        FinanceInputs: {
+            price: number;
+            variable: number;
+            fixed: number;
+            volume: number;
+        };
+        FinanceCalculation: {
+            revenue: number;
+            variable_total: number;
+            fixed: number;
+            contribution: number;
+            unit_margin: number;
+            break_even: number | null;
         };
         Finance: {
             /** @enum {string} */
@@ -718,6 +820,120 @@ export interface operations {
             503: components["responses"]["Error503"];
         };
     };
+    register: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Registration"];
+            };
+        };
+        responses: {
+            /** @description Успешный ответ */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            403: components["responses"]["Error403"];
+            409: components["responses"]["Error409"];
+            422: components["responses"]["Error422"];
+            429: components["responses"]["Error429"];
+            503: components["responses"]["Error503"];
+        };
+    };
+    getProfile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Успешный ответ */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            401: components["responses"]["Error401"];
+            429: components["responses"]["Error429"];
+            503: components["responses"]["Error503"];
+        };
+    };
+    updateProfile: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileName"];
+            };
+        };
+        responses: {
+            /** @description Успешный ответ */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Profile"];
+                };
+            };
+            401: components["responses"]["Error401"];
+            403: components["responses"]["Error403"];
+            422: components["responses"]["Error422"];
+            429: components["responses"]["Error429"];
+            503: components["responses"]["Error503"];
+        };
+    };
+    changePassword: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PasswordChange"];
+            };
+        };
+        responses: {
+            /** @description Успешный ответ */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Session"];
+                };
+            };
+            401: components["responses"]["Error401"];
+            403: components["responses"]["Error403"];
+            422: components["responses"]["Error422"];
+            429: components["responses"]["Error429"];
+            503: components["responses"]["Error503"];
+        };
+    };
     getCurrentDataset: {
         parameters: {
             query?: never;
@@ -745,6 +961,8 @@ export interface operations {
     listNiches: {
         parameters: {
             query?: {
+                /** @description Подстрока в названии или сегменте ниши, без учёта регистра. */
+                q?: string;
                 dataset_id?: string;
                 cursor?: string;
                 limit?: number;
@@ -771,6 +989,37 @@ export interface operations {
             };
             401: components["responses"]["Error401"];
             404: components["responses"]["Error404"];
+            422: components["responses"]["Error422"];
+            429: components["responses"]["Error429"];
+            503: components["responses"]["Error503"];
+        };
+    };
+    calculateFinance: {
+        parameters: {
+            query?: never;
+            header: {
+                "X-CSRF-Token": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FinanceInputs"];
+            };
+        };
+        responses: {
+            /** @description Результат расчёта */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FinanceCalculation"];
+                };
+            };
+            401: components["responses"]["Error401"];
+            403: components["responses"]["Error403"];
             422: components["responses"]["Error422"];
             429: components["responses"]["Error429"];
             503: components["responses"]["Error503"];

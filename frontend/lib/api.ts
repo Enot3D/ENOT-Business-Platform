@@ -4,7 +4,7 @@ export type Schema<Name extends keyof components["schemas"]> = components["schem
 export type Filters = Schema<"CatalogFilters">;
 export type Niche = Schema<"Niche">;
 
-type Method = "get" | "post" | "delete";
+type Method = "get" | "post" | "patch" | "delete";
 type Route<M extends Method> = {
   [P in keyof paths]: paths[P][M] extends { responses: unknown } ? P : never
 }[keyof paths];

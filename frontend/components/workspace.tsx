@@ -1,6 +1,6 @@
 "use client";
 
-import { ChartNoAxesCombined, Compass, FolderOpen, LayoutGrid, LogOut, Scale, ArrowUpRight } from "lucide-react";
+import { ChartNoAxesCombined, Compass, FolderOpen, LayoutGrid, LogOut, Scale, ArrowUpRight, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { createContext, useContext, useEffect, useState } from "react";
@@ -15,6 +15,7 @@ type Workspace = {
   sessionError: unknown;
   retrySession: () => void;
   authenticate: (session: Session | null) => void;
+  renewSession: (session: Session) => void;
   picked: Niche[];
   toggle: (niche: Niche) => void;
   clear: () => void;
@@ -40,6 +41,17 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
   const initial = useResource(loadSession);
   const [override, setOverride] = useState<Session | null>();
   const [picked, setPicked] = useState<Niche[]>([]);
+  const session = override === undefined ? initial.data : override;
+  const expiresAt = session?.expires_at;
+
+  useEffect(() => {
+    if (!expiresAt) return;
+    const timeout = window.setTimeout(() => {
+      setOverride(null);
+      setPicked([]);
+    }, Math.max(0, Date.parse(expiresAt) - Date.now()));
+    return () => window.clearTimeout(timeout);
+  }, [expiresAt]);
 
   useEffect(() => {
     const expire = () => { setOverride(null); setPicked([]); };
@@ -65,10 +77,10 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <Context.Provider value={{
-      session: override === undefined ? initial.data : override,
+      session,
       sessionError: override === undefined ? initial.error : undefined,
       retrySession: initial.retry,
-      authenticate, picked, toggle, clear: () => setPicked([]),
+      authenticate, renewSession: setOverride, picked, toggle, clear: () => setPicked([]),
     }}>{children}</Context.Provider>
   );
 }
@@ -82,6 +94,7 @@ const navigation = [
   { href: "/niches", label: "Каталог ниш", Icon: LayoutGrid },
   { href: "/compare", label: "Сравнение", Icon: Scale },
   { href: "/research", label: "Исследования", Icon: FolderOpen },
+  { href: "/profile", label: "Личный кабинет", Icon: UserRound },
 ];
 
 export function WorkspaceShell({ children }: { children: React.ReactNode }) {
