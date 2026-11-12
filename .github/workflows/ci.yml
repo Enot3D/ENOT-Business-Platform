@@ -63,6 +63,8 @@ jobs:
         run: |
           docker compose config --quiet
           docker compose --profile '*' config --quiet
+      - name: Build the Railway PostgreSQL image
+        run: docker build --file infra/railway/postgres.Dockerfile --tag enot-staging-postgres:ci .
       - name: Check PostgreSQL, health, persistence and restore
         run: |
           bash infra/postgres/smoke.sh
