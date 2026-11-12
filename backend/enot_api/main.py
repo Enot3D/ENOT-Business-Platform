@@ -7,7 +7,7 @@ import yaml
 from fastapi import FastAPI, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
-from sqlalchemy import text
+from sqlalchemy import text, select
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException
 from starlette.datastructures import MutableHeaders
@@ -17,7 +17,9 @@ from . import catalog, research
 from . import schemas as s
 from .scoring import ROOT
 from .security import APIError, COOKIE, PREFIX, Current, Db, Writer, login, settings
-from .db import now
+from .db import now, transaction_lock
+from .models import User
+from .security import PASSWORD_HASHER, origin_allowed
 
 LOGGER = logging.getLogger("enot.api")
 MAX_REQUEST_BYTES = 32_768
@@ -146,6 +148,21 @@ def liveness() -> dict[str, str]:
 def readiness(db: Db) -> dict[str, str]:
     db.execute(text("SELECT 1 FROM dataset_versions LIMIT 1"))
     return {"status": "ready"}
+
+
+@app.post(PREFIX + "/bootstrap", status_code=200, include_in_schema=False)
+def bootstrap_first_user(body: s.Login, request: Request, response: Response, db: Db) -> s.Session:
+    # Only the first account can be created through this endpoint.
+    if not origin_allowed(request):
+        raise APIError(403, "forbidden", "Invalid origin")
+    if not 12 <= len(body.password) <= 256:
+        raise APIError(422, "validation_error", "Password must contain 12–256 characters")
+    transaction_lock(db, "bootstrap-first-user")
+    if db.scalar(select(User.id).limit(1)) is not None:
+        raise APIError(403, "bootstrap_closed", "Initial account has already been created")
+    db.add(User(login=body.login, password_hash=PASSWORD_HASHER.hash(body.password), enabled=True))
+    db.commit()
+    return login(body, request, response, db)
 
 
 app.post(PREFIX + "/session", operation_id="login")(login)
