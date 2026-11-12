@@ -91,20 +91,41 @@ jobs:
           docker compose exec -T api python - < infra/backend-smoke.py
           docker compose exec -T db createdb -U postgres -O enot_app enot_test
           docker compose --profile ci run --build --rm backend-tests
-      - name: Build frontend when its sources are present
-        if: ${{ !cancelled() }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        if: ${{ hashFiles('frontend/package-lock.json') != '' }}
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Check frontend and generated OpenAPI types
+        if: ${{ hashFiles('frontend/package-lock.json') != '' }}
+        working-directory: frontend
         run: |
-          if [[ ! -d frontend ]]; then
-            echo "::notice::Frontend build awaits TASK-006 (frontend/ absent)."
-            exit 0
-          fi
-
-          docker build --file infra/frontend.Dockerfile .
+          npm ci
+          npm run generate:api
+          git diff --exit-code -- lib/openapi.d.ts
+          npm run lint
+          npm run typecheck
+      - name: Build and start frontend with Compose
+        if: ${{ hashFiles('frontend/package-lock.json') != '' }}
+        run: docker compose --profile web --profile worker up -d --build --wait --wait-timeout 120 frontend worker
+      - name: Verify browser workflows against FastAPI and PostgreSQL
+        if: ${{ hashFiles('frontend/package-lock.json') != '' }}
+        run: |
+          export ENOT_E2E_LOGIN=frontend-e2e
+          ENOT_E2E_PASSWORD="$(openssl rand -hex 24)"
+          export ENOT_E2E_PASSWORD
+          echo "::add-mask::$ENOT_E2E_PASSWORD"
+          printf '%s\n' "$ENOT_E2E_PASSWORD" "$ENOT_E2E_PASSWORD" |
+            docker compose exec -T api python -m enot_api.cli create-user "$ENOT_E2E_LOGIN"
+          cd frontend
+          npx playwright install --with-deps chromium
+          npm run test:e2e
       - name: Show container diagnostics on failure
         if: failure()
         run: |
           docker compose --profile '*' ps --all
-          docker compose --profile '*' logs --no-color --tail 80 db migrate seed api worker
+          docker compose --profile '*' logs --no-color --tail 80 db migrate seed api worker frontend
       - name: Remove disposable CI environment
         if: always()
         run: docker compose --profile '*' down --volumes --remove-orphans
