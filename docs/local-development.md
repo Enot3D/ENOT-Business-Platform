@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | `db` | По умолчанию | PostgreSQL 16, том `postgres-data`, проверка SQL под ролью приложения |
 | `migrate`, `seed`, `api` | `--profile api` | Конфигурация Alembic и FastAPI. Требуется код TASK-005 |
-| `frontend`, `api`, `seed`, `migrate` | `--profile web` | Конфигурация Next.js и общего origin. Требуются TASK-005 и TASK-006 |
+| `frontend`, `api`, `seed`, `migrate` | `--profile web` | Next.js, FastAPI и общий origin |
 | `worker`, `seed`, `migrate` | `--profile worker` | Воркер TASK-005 с локальной сводкой и SQL-проверкой подключения. Внешний адаптер относится к TASK-007 |
 | `backend-tests` | `--profile ci` | Образ pytest для TASK-005. Запускается разовой командой `run` |
 
@@ -67,7 +67,14 @@ docker compose --profile api --profile worker up -d --build --wait --wait-timeou
 
 При обычном запуске профиль API автоматически выполняет `alembic upgrade head` и затем разовый сервис `seed` выполняет `python -m enot_api.cli import` до старта API и воркера. Повторный импорт тех же входов возвращает прежний ID выпуска и хеш. Посмотреть результат можно через `docker compose --profile api logs seed`. `alembic current` показывает применённую ревизию. `alembic check` выявляет расхождения, которые Alembic обнаруживает между моделями и схемой БД. Порядок отката зависит от конкретной ревизии. Проверьте `downgrade` на отдельной копии и сверяйте данные до применения. Для миграции с потерей данных используйте резервную копию.
 
-Профиль `web` подключается после появления TASK-006. Создать локальную учётную запись после запуска API можно командой `docker compose exec api python -m enot_api.cli create-user owner`.
+### Запуск интерфейса и локального аналитика
+
+```sh
+docker compose --profile web --profile worker up -d --build --wait --wait-timeout 120 frontend worker
+docker compose exec api python -m enot_api.cli create-user owner
+```
+
+Откройте `http://localhost:3000`. При изменении `WEB_PORT` используйте новый порт и тот же хост `localhost`, который указан в `APP_ORIGIN`. Команда создания пользователя запрашивает пароль интерактивно и нужна один раз на аккаунт. Шаги браузерной проверки и команды разработки описаны в [документации frontend](../frontend/README.md).
 
 Проверки backend запускаются в отдельной базе. В CI одноразовый экземпляр создаёт её командой `docker compose exec -T db createdb -U postgres -O enot_app enot_test`. Владение этой базой позволяет роли создавать и удалять изолированные тестовые схемы. Команда проверки — `docker compose --profile ci run --build --rm backend-tests`.
 
@@ -135,5 +142,5 @@ docker compose --profile api --profile worker up -d --build --wait --wait-timeou
 | Задача | Стыковка и проверка |
 | --- | --- |
 | [TASK-005](../architecture/TASK-004/development-plan.md) | Из `/app/backend` запускаются `enot_api.main:app`, Alembic и CLI импорта. Образ сохраняет соседние каталоги TASK-002/003/004 для импорта и OpenAPI. CI проверяет `/readyz`, повтор импорта, вход и каталог из 20 ниш, миграции и pytest. |
-| [TASK-006](../tasks/backlog/TASK-006.md) | Сверить путь `frontend/`, npm lock-файл и скрипты Next.js. Настроить rewrite `/api/v1/:path*` на `${API_INTERNAL_ORIGIN}/api/v1/:path*`, сохранить относительные URL в браузере и проверить профиль `web` по `http://localhost:3000`. После подключения CI соберёт образ. |
+| [TASK-006](../tasks/active/TASK-006.md) | Next.js проксирует `/api/v1/:path*` в FastAPI через `API_INTERNAL_ORIGIN`. CI проверяет типы OpenAPI, lint, typecheck, запуск образа Compose и сценарии Chromium на трёх размерах окна. |
 | [TASK-007](../tasks/backlog/TASK-007.md) | Воркера запускает `python -m enot_api.cli worker`. CI передаёт задание реальному воркеру и проверяет локальный fallback. Для TASK-007 предстоит подключить внешний адаптер и его проверки, затем передать сценарий TASK-008. |
