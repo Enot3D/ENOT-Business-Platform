@@ -1,0 +1,21 @@
+id,industry,demand,competition,risk
+01,manufacturing,S06,S21 S22,
+02,manufacturing,S04,S05 S23,
+03,transport,S08 S09 S10,S24,S08 S10
+04,ecommerce,S01 S02,S27,S26 S28
+05,manufacturing,S06,S20,
+06,manufacturing,S04,,
+07,manufacturing,S04,S05 S23,
+08,manufacturing,S21 S22,S21 S22,
+09,manufacturing,S06,S16,
+10,ecommerce,S02 S03,,
+11,ecommerce,S02,S27,
+12,ecommerce,S02,,S26 S27 S28
+13,manufacturing,S04 S05,,
+14,document_management,S06 S08,S24,S08
+15,manufacturing,S07,,
+16,manufacturing,S16 S17,S16 S17,
+17,hospitality,S14,,
+18,payments,S13 S30,,
+19,manufacturing,S06,,
+20,b2b,S03 S11,S05 S16,
