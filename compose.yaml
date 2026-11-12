@@ -4,7 +4,7 @@ x-backend-build: &backend-build
 
 x-backend-environment: &backend-environment
   DATABASE_URL: postgresql+psycopg://enot_app:${DB_APP_PASSWORD:?Set DB_APP_PASSWORD in .env}@db:5432/enot
-  AI_PROVIDER: stub
+  AI_PROVIDER: local
 
 services:
   db:
