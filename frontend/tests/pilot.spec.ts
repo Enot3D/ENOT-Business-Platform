@@ -12,8 +12,17 @@ test("pilot catalog, evidence, comparison, analysis and saved report", async ({ 
 
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  await page.goto("/niches");
-  await expect(page).toHaveURL(/\/login\?returnTo=%2Fniches$/);
+  const malformed = "/login?returnTo=%2F%2F%5Bbad";
+  const catalogUrl = "/niches?country=RU";
+  const desktop = info.project.name === "desktop";
+  const response = await page.goto(malformed);
+  expect(response?.status()).toBe(200);
+  await expect(page.getByRole("heading", { name: "Вход в платформу" })).toBeVisible();
+
+  if (!desktop) {
+    await page.goto(catalogUrl);
+    await expect(page).toHaveURL(`/login?returnTo=${encodeURIComponent(catalogUrl)}`);
+  }
   await page.getByLabel("Логин").fill(login);
   if (info.project.name === "desktop") {
     await page.getByLabel("Пароль").fill("wrong-password");
@@ -23,11 +32,38 @@ test("pilot catalog, evidence, comparison, analysis and saved report", async ({ 
   }
   await page.getByLabel("Пароль").fill(password);
   await page.getByRole("button", { name: "Войти" }).click();
+  await expect(page).toHaveURL(desktop ? "/" : catalogUrl);
+
+  if (desktop) {
+    for (const returnTo of ["https://example.com/niches", "//example.com/niches", "//enot.invalid/niches", "/login", "/niches/..//example.com"]) {
+      await page.goto(`/login?${new URLSearchParams({ returnTo })}`);
+      await expect(page).toHaveURL("/");
+    }
+    await page.goto(`/login?returnTo=${encodeURIComponent(catalogUrl)}`);
+    await expect(page).toHaveURL(catalogUrl);
+  }
+
   await expect(page.getByRole("heading", { name: "Каталог ниш" })).toBeVisible();
   await expect(page.getByRole("article")).toHaveCount(20);
   await fitsViewport(page);
 
-  await page.getByLabel("Регион").fill("RU-NIZ");
+  const phone = info.project.name === "phone";
+  const filterToggle = page.getByText("Фильтры каталога", { exact: true });
+  const region = page.getByLabel("Регион");
+  const budget = page.getByLabel("Бюджет, ₽");
+  if (phone) {
+    await expect(region).toBeHidden();
+    await filterToggle.focus();
+    await page.keyboard.press("Enter");
+  }
+  await expect(region).toBeVisible();
+  await expect(page.getByLabel("Страна")).toHaveValue("RU");
+
+  await region.fill("RU-NIZ");
+  await filterToggle.click();
+  await expect(region).toBeHidden();
+  await filterToggle.click();
+  await expect(region).toHaveValue("RU-NIZ");
   await page.getByRole("button", { name: "Применить" }).click();
   await expect(page).toHaveURL(/region=RU-NIZ/);
   await expect(page.getByText("По этим фильтрам нет ниш")).toBeVisible();
@@ -35,17 +71,31 @@ test("pilot catalog, evidence, comparison, analysis and saved report", async ({ 
 
   const transport = page.getByRole("article").filter({ hasText: "№03" });
   await expect(transport).toBeVisible();
-  await page.getByLabel("Бюджет, ₽").fill("29999");
+  await budget.fill("29999");
   await page.getByRole("button", { name: "Применить" }).click();
   await expect(page.getByText(/На странице:/)).toBeVisible();
   await expect(transport).toHaveCount(0);
-  await page.getByLabel("Бюджет, ₽").fill("30000");
+  await budget.fill("30000");
   await page.getByRole("button", { name: "Применить" }).click();
   await expect(transport).toContainText("Возможен при нижней оценке");
-  await page.getByLabel("Бюджет, ₽").fill("150000");
+  await budget.fill("150000");
   await page.getByRole("button", { name: "Применить" }).click();
   await expect(transport).toContainText("Покрывает диапазон");
-  await page.getByRole("link", { name: "Сбросить", exact: true }).click();
+  await filterToggle.click();
+  await expect(budget).toBeHidden();
+  await filterToggle.click();
+  await expect(budget).toHaveValue("150000");
+  await page.reload();
+  await expect(transport).toContainText("Покрывает диапазон");
+  if (phone) {
+    await expect(budget).toBeHidden();
+    await filterToggle.click();
+  }
+  await expect(budget).toHaveValue("150000");
+  await page.getByRole("button", { name: "Сбросить", exact: true }).click();
+  await expect(page).toHaveURL("/niches");
+  await expect(budget).toHaveValue("");
+  await expect(page.getByLabel("Страна")).toHaveValue("");
   await expect(page.getByRole("article")).toHaveCount(20);
 
   await page.getByRole("article").filter({ hasText: "№06" }).getByRole("link", { name: /Открыть:/ }).click();

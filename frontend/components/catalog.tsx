@@ -3,7 +3,7 @@
 import { ArrowRight, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useCallback, type FormEvent } from "react";
+import { useCallback, useLayoutEffect, useRef, type FormEvent } from "react";
 import { api, type Filters, type Niche, type Schema } from "@/lib/api";
 import { budgetRange, date, filterQuery, interval, market, number, readFilters } from "@/lib/format";
 import { useResource } from "@/lib/resource";
@@ -54,7 +54,19 @@ function CatalogCard({ niche, filters }: { niche: Niche; filters: Filters }) {
   </article>;
 }
 
-function CatalogFilters({ filters, dataset, apply }: { filters: Filters; dataset?: Schema<"Dataset">; apply: (filters: Filters) => void }) {
+function CatalogFilters({ filters, filterKey, dataset, apply }: {
+  filters: Filters;
+  filterKey: string;
+  dataset?: Schema<"Dataset">;
+  apply: (filters: Filters) => void;
+}) {
+  const panel = useRef<HTMLDetailsElement>(null);
+
+  useLayoutEffect(() => {
+    // Match the mobile breakpoint in globals.css and let the native summary handle subsequent toggles.
+    if (panel.current) panel.current.open = !window.matchMedia("(max-width: 630px)").matches;
+  }, []);
+
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -67,9 +79,9 @@ function CatalogFilters({ filters, dataset, apply }: { filters: Filters; dataset
     apply(readFilters(params));
   }
 
-  return <details className="panel filters" open>
+  return <details className="panel filters" ref={panel}>
     <summary><SlidersHorizontal size={18} /> Фильтры каталога</summary>
-    <form onSubmit={submit}>
+    <form key={filterKey} onSubmit={submit} onReset={() => apply({ include_unknown_budget: false })}>
       <div className="filter-fields">
         <label>Страна <input list="catalog-countries" name="country" defaultValue={filters.country} placeholder="Код, например RU" maxLength={2} pattern="[A-Za-z]{2}" /></label>
         <datalist id="catalog-countries">{Array.from(new Set(dataset?.markets.map(({ country }) => country))).map((country) => <option key={country} value={country}>{country === "RU" ? "Россия" : country}</option>)}</datalist>
@@ -82,7 +94,7 @@ function CatalogFilters({ filters, dataset, apply }: { filters: Filters; dataset
         <label>Бюджет, ₽ <input name="budget_rub" type="number" inputMode="numeric" min={0} max={1e12} step={1} placeholder="Без ограничения" defaultValue={filters.budget_rub} /></label>
       </div>
       <div className="filter-actions"><label className="check"><input type="checkbox" name="include_unknown_budget" value="true" defaultChecked={filters.include_unknown_budget} /> Включать ниши с неизвестным бюджетом</label>
-        <Link href="/niches" className="button subtle">Сбросить</Link><button className="button primary">Применить</button></div>
+        <button type="reset" className="button subtle">Сбросить</button><button className="button primary">Применить</button></div>
     </form>
   </details>;
 }
@@ -119,7 +131,7 @@ export function Catalog() {
       <span>{page ? `Обновлено ${date(page.updated_at)} · Модель ${page.model_version}` : dataset.data ? `Опубликован ${date(dataset.data.published_at)}` : "География выпуска загружается вместе с данными"}</span>
     </div>
     {dataset.error ? <Failure error={dataset.error} retry={dataset.retry} /> : null}
-    <CatalogFilters key={serialized} filters={filters} dataset={dataset.data} apply={apply} />
+    <CatalogFilters filterKey={serialized} filters={filters} dataset={dataset.data} apply={apply} />
     <div className="section-heading"><h2>Ниши</h2><span aria-live="polite">{page ? `На странице: ${page.items.length}${page.next_cursor ? " · есть ещё" : ""}` : null}</span></div>
     {results.pending && <Loading />}
     {results.error ? <Failure error={results.error} retry={results.retry} /> : null}

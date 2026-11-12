@@ -8,10 +8,20 @@ import { Brand, useWorkspace } from "./workspace";
 import { Failure, Loading } from "./states";
 
 function destination(value?: string) {
-  if (typeof value !== "string" || !value.startsWith("/") || /[\\\s]/.test(value)) return "/";
-  const url = new URL(value, "https://enot.invalid");
-  if (url.origin !== "https://enot.invalid" || !/^\/(?:$|(?:niches|research|compare)(?:\/|$))/.test(url.pathname)) return "/";
-  return url.pathname + url.search;
+  if (typeof value !== "string" || !value.startsWith("/") || value.startsWith("//") || /[\\\s]/.test(value)) {
+    return "/";
+  }
+
+  const origin = "https://enot.invalid";
+  try {
+    const url = new URL(value, origin);
+    if (url.origin === origin && /^\/(?:$|(?:niches|research|compare)(?:\/|$))/.test(url.pathname)) {
+      return url.pathname + url.search;
+    }
+  } catch {
+    // Malformed addresses fall back to the home page.
+  }
+  return "/";
 }
 
 export function Login({ returnTo }: { returnTo?: string }) {
