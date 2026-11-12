@@ -2,12 +2,12 @@
 
 Контур TASK-009 рассчитан на локальную разработку и одноразовые среды GitHub Actions. Нужны Docker Engine с Compose v2.24+ (или Docker Desktop), Bash и OpenSSL. Команды выполняются из корня репозитория.
 
-| Сервис | Как включить | Что доступно в базовой версии |
+| Сервис | Как включить | Назначение |
 | --- | --- | --- |
 | `db` | По умолчанию | PostgreSQL 16, том `postgres-data`, проверка SQL под ролью приложения |
-| `migrate`, `seed`, `api` | `--profile api` | Конфигурация Alembic и FastAPI. Требуется код TASK-005 |
+| `migrate`, `seed`, `api` | `--profile api` | Миграции Alembic, импорт начального выпуска и FastAPI |
 | `frontend`, `api`, `seed`, `migrate` | `--profile web` | Next.js, FastAPI и общий origin |
-| `worker`, `seed`, `migrate` | `--profile worker` | Воркер TASK-005 с локальной сводкой и SQL-проверкой подключения. Внешний адаптер относится к TASK-007 |
+| `worker`, `seed`, `migrate` | `--profile worker` | Воркер очереди с локальным аналитиком TASK-007 и SQL-проверкой подключения |
 | `backend-tests` | `--profile ci` | Образ pytest для TASK-005. Запускается разовой командой `run` |
 
 ## Первый запуск PostgreSQL
@@ -41,7 +41,7 @@ Compose завершит проверку конфигурации ошибко�
 | `TEST_DATABASE_URL` | Сервис `backend-tests` | Подключение к отдельной базе `enot_test`. |
 | `APP_ORIGIN` | Compose | Origin браузера для проверки запросов в API |
 | `API_INTERNAL_ORIGIN` | Compose и Dockerfile Next.js | Внутренний адрес API для Next.js |
-| `AI_PROVIDER` | Compose | `stub` для локального окружения и CI |
+| `AI_PROVIDER` | Compose | `local` для локального окружения и CI. Ключ внешнего API не требуется. |
 
 PostgreSQL считывает пароли и выполняет SQL инициализации при создании пустого тома. Для существующего тома пароль нужно изменить в PostgreSQL и синхронно обновить `.env`, затем пересоздать затронутые контейнеры. В интерактивном сеансе `docker compose exec db psql -U postgres -d enot` используйте `\password enot_app` или `\password postgres`. Значения из `.env` и полный вывод `docker compose config` могут содержать секреты.
 
@@ -54,7 +54,7 @@ docker compose --profile '*' down
 
 `stop` оставляет контейнеры, `down` удаляет их и сети проекта. Обе команды сохраняют том. Удаление томов в CI выполняется в отдельном одноразовом проекте.
 
-## Миграции после подключения TASK-005
+## Миграции и запуск сервисов
 
 Перед миграцией существующей базы сделайте резервную копию. Для чистого окружения или проверки на восстановленной копии выполните:
 
@@ -62,12 +62,19 @@ docker compose --profile '*' down
 docker compose --profile api run --build --rm migrate
 docker compose --profile api run --rm migrate alembic current
 docker compose --profile api run --rm migrate alembic check
-docker compose --profile api --profile worker up -d --build --wait --wait-timeout 120 api worker
 ```
 
-При обычном запуске профиль API автоматически выполняет `alembic upgrade head` и затем разовый сервис `seed` выполняет `python -m enot_api.cli import` до старта API и воркера. Повторный импорт тех же входов возвращает прежний ID выпуска и хеш. Посмотреть результат можно через `docker compose --profile api logs seed`. `alembic current` показывает применённую ревизию. `alembic check` выявляет расхождения, которые Alembic обнаруживает между моделями и схемой БД. Порядок отката зависит от конкретной ревизии. Проверьте `downgrade` на отдельной копии и сверяйте данные до применения. Для миграции с потерей данных используйте резервную копию.
+При запуске API или воркера Compose сначала выполняет `alembic upgrade head`, затем разовый сервис `seed` выполняет `python -m enot_api.cli import`. Повторный импорт тех же входов возвращает прежний ID выпуска и хеш. Посмотреть результат можно через `docker compose --profile api logs seed`. `alembic current` показывает применённую ревизию. `alembic check` выявляет расхождения, которые Alembic обнаруживает между моделями и схемой БД. Порядок отката зависит от конкретной ревизии. Проверьте `downgrade` на отдельной копии и сверяйте данные до применения. Для миграции с потерей данных используйте резервную копию.
 
-### Запуск интерфейса и локального аналитика
+### Профили Compose
+
+| Сценарий | Команда |
+| --- | --- |
+| Только API, доступный внутри сети Compose | `docker compose --profile api up -d --build --wait --wait-timeout 120 api` |
+| Интерфейс и API | `docker compose --profile web up -d --build --wait --wait-timeout 120 frontend` |
+| Воркер, миграции и начальный выпуск | `docker compose --profile worker up -d --build --wait --wait-timeout 120 worker` |
+
+Для полного локального запуска с интерфейсом и обработкой заданий аналитика:
 
 ```sh
 docker compose --profile web --profile worker up -d --build --wait --wait-timeout 120 frontend worker
@@ -75,6 +82,8 @@ docker compose exec api python -m enot_api.cli create-user owner
 ```
 
 Откройте `http://localhost:3000`. При изменении `WEB_PORT` используйте новый порт и тот же хост `localhost`, который указан в `APP_ORIGIN`. Команда создания пользователя запрашивает пароль интерактивно и нужна один раз на аккаунт. Шаги браузерной проверки и команды разработки описаны в [документации frontend](../frontend/README.md).
+
+Локальный аналитик формирует сводку по наблюдениям и расчётам платформы. При наличии пригодных наблюдений результат имеет статус `fallback` и код `provider_disabled`. При их отсутствии возвращается `insufficient_data`. В стандартном Compose режим `local` задан явно, переменные внешнего провайдера в воркер не передаются, а его сеть `data` внутренняя. Внешний вызов возможен только после явной настройки воркера и его сетевого доступа, с утверждённой политикой, ключом и бюджетом. Перечень настроек приведён в [руководстве TASK-007](../backend/AI-ANALYST.md).
 
 Проверки backend запускаются в отдельной базе. В CI одноразовый экземпляр создаёт её командой `docker compose exec -T db createdb -U postgres -O enot_app enot_test`. Владение этой базой позволяет роли создавать и удалять изолированные тестовые схемы. Команда проверки — `docker compose --profile ci run --build --rm backend-tests`.
 
@@ -119,7 +128,7 @@ docker compose exec api python -m enot_api.cli create-user owner
 )
 ```
 
-Сверьте число и содержимое ключевых записей, а после подключения backend проверьте `alembic current` и чтение данных через API. Остановить экземпляр можно через `docker compose -p <проект-восстановления> down`. В CI архив с синтетической строкой восстанавливается в отдельную базу PostgreSQL и проверяется чтением строки.
+Сверьте число и содержимое ключевых записей, затем проверьте `alembic current` и чтение данных через API. Остановить экземпляр можно через `docker compose -p <проект-восстановления> down`. В CI архив с синтетической строкой восстанавливается в отдельную базу PostgreSQL и проверяется чтением строки.
 
 ## Диагностика
 
@@ -135,7 +144,7 @@ docker compose exec api python -m enot_api.cli create-user owner
 
 ## CI и интеграция
 
-[Workflow MVP CI](../.github/workflows/ci.yml) запускается в PR и при обновлении `main`. Он проверяет синтаксис Python, существующие тесты калькулятора TASK-003, утверждённый OpenAPI 3.1, все профили Compose и PostgreSQL с синтетическими данными. PR показывает статус и сообщения шагов. При отсутствии `backend/` или `frontend/` в журнале появляется отметка об отложенной проверке. Появление соответствующего каталога включает проверки автоматически. До объединения веток CI PR №5 при отсутствии `backend/` берёт закреплённую версию PR №6. В остальных запусках используются файлы проверяемого коммита.
+[Workflow MVP CI](../.github/workflows/ci.yml) запускается в PR и при обновлении `main`. Он проверяет синтаксис Python, существующие тесты калькулятора TASK-003, утверждённый OpenAPI 3.1, все профили Compose и PostgreSQL с синтетическими данными. PR показывает статус и сообщения шагов. CI запускает API и воркер с файлами проверяемого коммита, проверяет обработку задания в режиме `local`, затем запускает интерфейс и браузерные тесты.
 
 На машине с Docker проверку PostgreSQL можно повторить командой `COMPOSE_PROJECT_NAME=enot-smoke-$(date +%s) bash infra/postgres/smoke.sh`. Скрипт оставляет отдельный проверочный проект с тестовой строкой и восстановленной базой для осмотра. Остановите его с помощью `docker compose -p <имя-проекта> down`.
 
@@ -143,4 +152,4 @@ docker compose exec api python -m enot_api.cli create-user owner
 | --- | --- |
 | [TASK-005](../architecture/TASK-004/development-plan.md) | Из `/app/backend` запускаются `enot_api.main:app`, Alembic и CLI импорта. Образ сохраняет соседние каталоги TASK-002/003/004 для импорта и OpenAPI. CI проверяет `/readyz`, повтор импорта, вход и каталог из 20 ниш, миграции и pytest. |
 | [TASK-006](../tasks/active/TASK-006.md) | Next.js проксирует `/api/v1/:path*` в FastAPI через `API_INTERNAL_ORIGIN`. CI проверяет типы OpenAPI, lint, typecheck, запуск образа Compose и сценарии Chromium на трёх размерах окна. |
-| [TASK-007](../tasks/backlog/TASK-007.md) | Воркера запускает `python -m enot_api.cli worker`. CI передаёт задание реальному воркеру и проверяет локальный fallback. Для TASK-007 предстоит подключить внешний адаптер и его проверки, затем передать сценарий TASK-008. |
+| [TASK-007](../tasks/active/TASK-007.md) | Воркера запускает `python -m enot_api.cli worker`. CI передаёт задание воркеру и проверяет локальную сводку. Тесты внешнего адаптера используют подменённый транспорт. См. [режимы и настройки аналитика](../backend/AI-ANALYST.md). |
