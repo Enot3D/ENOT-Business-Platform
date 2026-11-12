@@ -1,0 +1,1730 @@
+openapi: 3.1.0
+info:
+  title: ENOT Business Platform MVP
+  version: 0.1.0
+  description: Проект контракта. Ошибки используют стабильные code/message/request_id. Курсоры непрозрачные и привязаны
+    к фильтрам и владельцу для частных ресурсов. Запись с Idempotency-Key сравнивает канонический хеш запроса в
+    рамках владельца и маршрута. Несовместимые изменения требуют нового major пути.
+servers:
+- url: /api/v1
+security:
+- SessionCookie: []
+paths:
+  /session:
+    post:
+      operationId: login
+      description: Создать сессию и вернуть CSRF-токен; Set-Cookie с непрозрачной сессией.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Login'
+      security: []
+    get:
+      operationId: getSession
+      description: Прочитать текущую сессию и CSRF-токен.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Session'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+    delete:
+      operationId: logout
+      description: Отозвать текущую сессию.
+      responses:
+        '204':
+          description: Успешный ответ
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+  /datasets/current:
+    get:
+      operationId: getCurrentDataset
+      description: Текущий опубликованный выпуск с допустимой географией и отраслями.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Dataset'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /niches:
+    get:
+      operationId: listNiches
+      description: Каталог текущего либо заданного выпуска. Сортировка по точному lower и ID. Курсор фиксирует выпуск
+        и фильтры. Регион требует country. География строго по покрытию, бюджет по start_min. При бюджете include_unknown_budget
+        разрешает карточки без start_min.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NichePage'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: dataset_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 1024
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+      - name: country
+        in: query
+        required: false
+        schema:
+          type: string
+          pattern: ^[A-Z]{2}$
+      - name: region
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 32
+      - name: industry
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 64
+      - name: budget_rub
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 0
+          maximum: 1000000000000
+      - name: include_unknown_budget
+        in: query
+        required: false
+        schema:
+          type: boolean
+          default: false
+  /niches/{niche_id}:
+    get:
+      operationId: getNiche
+      description: Карточка и доказательства указанного или текущего выпуска.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NicheDetail'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: niche_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: dataset_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+  /niches/{niche_id}/scores:
+    post:
+      operationId: recalculateScore
+      description: Повторно вычислить либо вернуть сохранённый результат по неизменяемым входам.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Score'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: niche_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Recalculate'
+  /scoring-models:
+    get:
+      operationId: listScoringModels
+      description: История опубликованных версий методики; v1 только для справки.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Model'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+  /comparisons:
+    post:
+      operationId: compareNiches
+      description: Сравнить 2–5 уникальных ниш одного выпуска, сохранив порядок запроса.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Comparison'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CompareRequest'
+  /sources:
+    get:
+      operationId: listSources
+      description: Реестр версий источников выбранного выпуска, курсор фиксирует выпуск.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourcePage'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: dataset_id
+        in: query
+        required: false
+        schema:
+          type: string
+          format: uuid
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 1024
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+  /sources/{source_version_id}:
+    get:
+      operationId: getSourceVersion
+      description: Версия источника по ID, в том числе из исторического выпуска.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SourceVersion'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: source_version_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /research-projects:
+    get:
+      operationId: listProjects
+      description: История проектов владельца; порядок updated_at и ID по убыванию.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProjectPage'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 1024
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+    post:
+      operationId: createProject
+      description: Создать личное исследование с параметрами поиска.
+      responses:
+        '201':
+          description: Успешный ответ
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Путь созданного ресурса или статуса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProjectCreate'
+  /research-projects/{project_id}:
+    get:
+      operationId: getProject
+      description: Получить параметры личного проекта.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /research-projects/{project_id}/reports:
+    get:
+      operationId: listReports
+      description: Версии отчётов проекта по убыванию номера.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReportPage'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: cursor
+        in: query
+        required: false
+        schema:
+          type: string
+          maxLength: 1024
+      - name: limit
+        in: query
+        required: false
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 100
+          default: 20
+    post:
+      operationId: saveReport
+      description: Сохранить неизменяемый снимок. interpretation_id может быть null; иначе интерпретация терминальная
+        и соответствует набору.
+      responses:
+        '201':
+          description: Успешный ответ
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Путь созданного ресурса или статуса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReportCreate'
+  /research-projects/{project_id}/reports/{report_id}:
+    get:
+      operationId: getReport
+      description: Прочитать исторический снимок отчёта владельца.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: report_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /research-projects/{project_id}/interpretations:
+    post:
+      operationId: requestInterpretation
+      description: Поставить в очередь объяснение; status_url указывает на GET. Повтор с тем же ключом и телом возвращает
+        тот же ресурс.
+      responses:
+        '202':
+          description: Успешный ответ
+          headers:
+            Location:
+              schema:
+                type: string
+              description: Путь созданного ресурса или статуса
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Interpretation'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '403':
+          $ref: '#/components/responses/Error403'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '409':
+          $ref: '#/components/responses/Error409'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: Idempotency-Key
+        in: header
+        required: true
+        schema:
+          type: string
+          minLength: 8
+          maxLength: 128
+      - name: X-CSRF-Token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Selection'
+  /research-projects/{project_id}/interpretations/{interpretation_id}:
+    get:
+      operationId: getInterpretation
+      description: Опрос статуса интерпретации владельца.
+      responses:
+        '200':
+          description: Успешный ответ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Interpretation'
+        '401':
+          $ref: '#/components/responses/Error401'
+        '404':
+          $ref: '#/components/responses/Error404'
+        '422':
+          $ref: '#/components/responses/Error422'
+        '429':
+          $ref: '#/components/responses/Error429'
+        '503':
+          $ref: '#/components/responses/Error503'
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: interpretation_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+components:
+  securitySchemes:
+    SessionCookie:
+      type: apiKey
+      name: enot_session
+      in: cookie
+  responses:
+    Error401:
+      description: Требуется вход или неверные учётные данные
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error403:
+      description: Проверка Origin или CSRF не пройдена
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error404:
+      description: Ресурс недоступен в выбранном выпуске или владельцу
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error409:
+      description: Конфликт ключа идемпотентности либо несовместимая интерпретация
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error422:
+      description: Недопустимые поля, курсор или комбинация фильтров
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error429:
+      description: Превышен лимит запросов или квота
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Error503:
+      description: Зависимость временно недоступна
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+  schemas:
+    Error:
+      type: object
+      required:
+      - code
+      - message
+      - request_id
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+      additionalProperties: false
+    Login:
+      type: object
+      required:
+      - login
+      - password
+      properties:
+        login:
+          type: string
+          minLength: 1
+          maxLength: 128
+        password:
+          type: string
+          minLength: 1
+          maxLength: 256
+      additionalProperties: false
+    Session:
+      type: object
+      required:
+      - user_id
+      - csrf_token
+      - expires_at
+      properties:
+        user_id:
+          type: string
+          format: uuid
+        csrf_token:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    CatalogFilters:
+      type: object
+      additionalProperties: false
+      properties:
+        country:
+          type: string
+          pattern: ^[A-Z]{2}$
+        region:
+          type: string
+          maxLength: 32
+        industry:
+          type: string
+          maxLength: 64
+        budget_rub:
+          type: integer
+          minimum: 0
+          maximum: 1000000000000
+        include_unknown_budget:
+          type: boolean
+          default: false
+    Model:
+      type: object
+      required:
+      - version
+      - calculator_commit
+      - calculator_sha256
+      - criteria_order
+      - weights
+      - published_at
+      properties:
+        version:
+          type: string
+        calculator_commit:
+          type: string
+        calculator_sha256:
+          type: string
+        criteria_order:
+          type: array
+          items:
+            type: string
+        weights:
+          type: array
+          items:
+            type: integer
+            minimum: 0
+        published_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    Score:
+      type: object
+      required:
+      - id
+      - model_version
+      - lower
+      - upper
+      - coverage
+      - confidence
+      - rank_from
+      - rank_to
+      - calculated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        model_version:
+          type: string
+        lower:
+          type: number
+          minimum: 0
+          maximum: 100
+        upper:
+          type: number
+          minimum: 0
+          maximum: 100
+        coverage:
+          type: number
+          minimum: 0
+          maximum: 100
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 100
+        rank_from:
+          type: integer
+          minimum: 1
+        rank_to:
+          type: integer
+          minimum: 1
+        calculated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    Market:
+      type: object
+      required:
+      - country
+      - region
+      - name
+      properties:
+        country:
+          type: string
+        region:
+          anyOf:
+          - type: string
+          - type: 'null'
+        name:
+          type: string
+      additionalProperties: false
+    Dataset:
+      type: object
+      required:
+      - id
+      - version
+      - published_at
+      - markets
+      - industries
+      properties:
+        id:
+          type: string
+          format: uuid
+        version:
+          type: string
+        published_at:
+          type: string
+          format: date-time
+        markets:
+          type: array
+          items:
+            $ref: '#/components/schemas/Market'
+        industries:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    Niche:
+      type: object
+      required:
+      - id
+      - legacy_code
+      - dataset_id
+      - title
+      - market
+      - industry
+      - segment
+      - updated_at
+      - score
+      - start_min
+      - start_max
+      properties:
+        id:
+          type: string
+          format: uuid
+        legacy_code:
+          type: string
+        dataset_id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        market:
+          $ref: '#/components/schemas/Market'
+        industry:
+          type: string
+        segment:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+        score:
+          $ref: '#/components/schemas/Score'
+        start_min:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        start_max:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+      additionalProperties: false
+    SourceVersion:
+      type: object
+      required:
+      - id
+      - source_code
+      - publisher
+      - title
+      - kind
+      - version
+      - url
+      - published_on
+      - retrieved_on
+      - retrieved_at
+      - availability
+      - access_mode
+      - license_note
+      - caveats
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_code:
+          type: string
+        publisher:
+          type: string
+        title:
+          type: string
+        kind:
+          type: string
+        version:
+          type: string
+        url:
+          type: string
+          format: uri
+        published_on:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+        retrieved_on:
+          type: string
+          format: date
+        retrieved_at:
+          anyOf:
+          - type: string
+            format: date-time
+          - type: 'null'
+        availability:
+          type: string
+          enum:
+          - readable
+          - unavailable
+          - shell
+        access_mode:
+          type: string
+        license_note:
+          type: string
+        caveats:
+          type: string
+      additionalProperties: false
+    Observation:
+      type: object
+      required:
+      - id
+      - source_version_id
+      - market
+      - kind
+      - metric
+      - value
+      - text_value
+      - unit
+      - currency
+      - basis
+      - period_start
+      - period_end
+      - period_label
+      - period_precision
+      - population
+      - locator
+      - method_version
+      - limitations
+      - input_ids
+      properties:
+        id:
+          type: string
+          format: uuid
+        source_version_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        market:
+          $ref: '#/components/schemas/Market'
+        kind:
+          type: string
+          enum:
+          - fact
+          - calculation
+          - estimate
+          - hypothesis
+        metric:
+          type: string
+        value:
+          anyOf:
+          - type: number
+          - type: 'null'
+        text_value:
+          anyOf:
+          - type: string
+          - type: 'null'
+        unit:
+          anyOf:
+          - type: string
+          - type: 'null'
+        currency:
+          anyOf:
+          - type: string
+          - type: 'null'
+        basis:
+          anyOf:
+          - type: string
+          - type: 'null'
+        period_start:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+        period_end:
+          anyOf:
+          - type: string
+            format: date
+          - type: 'null'
+        period_label:
+          type: string
+        period_precision:
+          type: string
+          enum:
+          - day
+          - month
+          - quarter
+          - year
+          - range
+          - unknown
+        population:
+          type: string
+        locator:
+          type: string
+        method_version:
+          type: string
+        limitations:
+          type: string
+        input_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+      additionalProperties: false
+    Evidence:
+      type: object
+      required:
+      - id
+      - observation
+      - relation
+      - locator
+      - note
+      properties:
+        id:
+          type: string
+          format: uuid
+        observation:
+          $ref: '#/components/schemas/Observation'
+        relation:
+          type: string
+          enum:
+          - supports
+          - qualifies
+          - contradicts
+        locator:
+          type: string
+        note:
+          type: string
+      additionalProperties: false
+    Claim:
+      type: object
+      required:
+      - id
+      - section
+      - kind
+      - statement
+      - gap_reason
+      - evidence
+      properties:
+        id:
+          type: string
+          format: uuid
+        section:
+          type: string
+          enum:
+          - demand
+          - competition
+          - risk
+          - economics
+          - criterion
+          - gap
+        kind:
+          type: string
+          enum:
+          - fact
+          - calculation
+          - estimate
+          - hypothesis
+        statement:
+          type: string
+        gap_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+        evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/Evidence'
+      additionalProperties: false
+    Criterion:
+      type: object
+      required:
+      - code
+      - rating
+      - quality
+      - claim_ids
+      - gap_reason
+      properties:
+        code:
+          type: string
+          enum:
+          - D
+          - U
+          - C
+          - P
+          - I
+          - S
+          - R
+        rating:
+          anyOf:
+          - type: integer
+            minimum: 1
+            maximum: 5
+          - type: 'null'
+        quality:
+          type: integer
+          minimum: 0
+          maximum: 3
+        claim_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+        gap_reason:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: false
+    Finance:
+      type: object
+      required:
+      - code
+      - finance_version
+      - currency
+      - unit
+      - price
+      - variable
+      - fixed
+      - volume
+      - start_min
+      - start_max
+      - revenue
+      - variable_total
+      - contribution
+      - unit_margin
+      - break_even
+      - basis_kind
+      - calculated_at
+      properties:
+        code:
+          type: string
+          enum:
+          - low
+          - base
+          - high
+          - price_down_25
+          - price_up_25
+          - volume_down_25
+          - volume_up_25
+          - cost_down_50
+          - cost_up_50
+        finance_version:
+          type: string
+        currency:
+          type: string
+          enum:
+          - RUB
+        unit:
+          type: string
+        price:
+          type: integer
+          minimum: 0
+        variable:
+          type: integer
+          minimum: 0
+        fixed:
+          type: integer
+          minimum: 0
+        volume:
+          type: integer
+          minimum: 0
+        start_min:
+          type: integer
+          minimum: 0
+        start_max:
+          type: integer
+          minimum: 0
+        revenue:
+          type: integer
+          minimum: 0
+        variable_total:
+          type: integer
+          minimum: 0
+        contribution:
+          type: integer
+        unit_margin:
+          type: integer
+        break_even:
+          anyOf:
+          - type: integer
+            minimum: 0
+          - type: 'null'
+        basis_kind:
+          type: string
+          enum:
+          - estimate
+          - hypothesis
+        calculated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    NicheDetail:
+      type: object
+      required:
+      - niche
+      - criteria
+      - claims
+      - finance
+      - finance_gap
+      properties:
+        niche:
+          $ref: '#/components/schemas/Niche'
+        criteria:
+          type: array
+          items:
+            $ref: '#/components/schemas/Criterion'
+          minItems: 7
+          maxItems: 7
+        claims:
+          type: array
+          items:
+            $ref: '#/components/schemas/Claim'
+        finance:
+          type: array
+          items:
+            $ref: '#/components/schemas/Finance'
+        finance_gap:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: false
+    Recalculate:
+      type: object
+      required:
+      - dataset_id
+      - model_version
+      properties:
+        dataset_id:
+          type: string
+          format: uuid
+        model_version:
+          type: string
+          const: 2.0-pilot
+      additionalProperties: false
+    Selection:
+      type: object
+      required:
+      - dataset_id
+      - model_version
+      - niche_ids
+      properties:
+        dataset_id:
+          type: string
+          format: uuid
+        model_version:
+          type: string
+          const: 2.0-pilot
+        niche_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+      additionalProperties: false
+    CompareRequest:
+      type: object
+      required:
+      - dataset_id
+      - model_version
+      - niche_ids
+      properties:
+        dataset_id:
+          type: string
+          format: uuid
+        model_version:
+          type: string
+          const: 2.0-pilot
+        niche_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 2
+          maxItems: 5
+          uniqueItems: true
+      additionalProperties: false
+    Comparison:
+      type: object
+      required:
+      - dataset_id
+      - model_version
+      - items
+      - warnings
+      properties:
+        dataset_id:
+          type: string
+          format: uuid
+        model_version:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NicheDetail'
+          minItems: 2
+          maxItems: 5
+        warnings:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+    ProjectCreate:
+      type: object
+      required:
+      - title
+      - filters
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 120
+        filters:
+          $ref: '#/components/schemas/CatalogFilters'
+      additionalProperties: false
+    Project:
+      type: object
+      required:
+      - id
+      - title
+      - filters
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        filters:
+          $ref: '#/components/schemas/CatalogFilters'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    ReportCreate:
+      type: object
+      required:
+      - dataset_id
+      - model_version
+      - niche_ids
+      - filters
+      - interpretation_id
+      properties:
+        dataset_id:
+          type: string
+          format: uuid
+        model_version:
+          type: string
+          const: 2.0-pilot
+        niche_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          minItems: 1
+          maxItems: 5
+          uniqueItems: true
+        filters:
+          $ref: '#/components/schemas/CatalogFilters'
+        interpretation_id:
+          anyOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+      additionalProperties: false
+    ReportSummary:
+      type: object
+      required:
+      - id
+      - project_id
+      - dataset_id
+      - model_version
+      - version
+      - created_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        dataset_id:
+          type: string
+          format: uuid
+        model_version:
+          type: string
+        version:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    Statement:
+      type: object
+      required:
+      - kind
+      - statement
+      - observation_ids
+      properties:
+        kind:
+          type: string
+          enum:
+          - fact
+          - calculation
+          - estimate
+          - hypothesis
+        statement:
+          type: string
+        observation_ids:
+          type: array
+          items:
+            type: string
+            format: uuid
+          uniqueItems: true
+      additionalProperties: false
+    Interpretation:
+      type: object
+      required:
+      - id
+      - project_id
+      - status
+      - status_url
+      - items
+      - gaps
+      - provider
+      - model
+      - prompt_version
+      - error_code
+      - created_at
+      - updated_at
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum:
+          - queued
+          - running
+          - succeeded
+          - insufficient_data
+          - fallback
+          - failed
+        status_url:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Statement'
+        gaps:
+          type: array
+          items:
+            type: string
+        provider:
+          anyOf:
+          - type: string
+          - type: 'null'
+        model:
+          anyOf:
+          - type: string
+          - type: 'null'
+        prompt_version:
+          type: string
+        error_code:
+          anyOf:
+          - type: string
+          - type: 'null'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    Report:
+      type: object
+      required:
+      - id
+      - project_id
+      - dataset_id
+      - model_version
+      - version
+      - created_at
+      - filters
+      - items
+      - sources
+      - interpretation
+      - sha256
+      properties:
+        id:
+          type: string
+          format: uuid
+        project_id:
+          type: string
+          format: uuid
+        dataset_id:
+          type: string
+          format: uuid
+        model_version:
+          type: string
+        version:
+          type: integer
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+        filters:
+          $ref: '#/components/schemas/CatalogFilters'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/NicheDetail'
+          minItems: 1
+          maxItems: 5
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceVersion'
+        interpretation:
+          anyOf:
+          - $ref: '#/components/schemas/Interpretation'
+          - type: 'null'
+        sha256:
+          type: string
+      additionalProperties: false
+    NichePage:
+      type: object
+      required:
+      - items
+      - next_cursor
+      - dataset_id
+      - model_version
+      - updated_at
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Niche'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+        dataset_id:
+          type: string
+          format: uuid
+        model_version:
+          type: string
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+    SourcePage:
+      type: object
+      required:
+      - items
+      - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceVersion'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: false
+    ProjectPage:
+      type: object
+      required:
+      - items
+      - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Project'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: false
+    ReportPage:
+      type: object
+      required:
+      - items
+      - next_cursor
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportSummary'
+        next_cursor:
+          anyOf:
+          - type: string
+          - type: 'null'
+      additionalProperties: false
