@@ -12,6 +12,9 @@
 !architecture/
 !architecture/TASK-004/
 !architecture/TASK-004/**
+!infra/
+!infra/postgres/
+!infra/postgres/10-app-role.sh
 
 # Exclude local secrets and generated files even inside allowed paths.
 **/.env
