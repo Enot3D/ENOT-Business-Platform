@@ -1,0 +1,124 @@
+x-backend-build: &backend-build
+  context: .
+  dockerfile: infra/backend.Dockerfile
+
+x-backend-environment: &backend-environment
+  DATABASE_URL: postgresql+psycopg://enot_app:${DB_APP_PASSWORD:?Set DB_APP_PASSWORD in .env}@db:5432/enot
+  AI_PROVIDER: stub
+
+services:
+  db:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: enot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?Set DB_APP_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/10-app-role.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
+    networks: [data]
+    healthcheck:
+      test: ["CMD-SHELL", "PGPASSWORD=\"$$DB_APP_PASSWORD\" psql -w -h 127.0.0.1 -U enot_app -d enot -Atqc 'SELECT 1' >/dev/null"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  # Integration points. Each profile requires the corresponding application code.
+  migrate:
+    profiles: [api, web, worker]
+    build: *backend-build
+    environment: *backend-environment
+    command: ["alembic", "upgrade", "head"]
+    networks: [data]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  seed:
+    profiles: [api, web, worker]
+    build: *backend-build
+    environment: *backend-environment
+    command: ["python", "-m", "enot_api.cli", "import"]
+    networks: [data]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  api:
+    profiles: [api, web]
+    build: *backend-build
+    environment:
+      <<: *backend-environment
+      APP_ORIGIN: http://localhost:${WEB_PORT:-3000}
+      APP_SIGNING_KEY: ${APP_SIGNING_KEY:-}
+      APP_COOKIE_SECURE: "false"
+    command: ["uvicorn", "enot_api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    networks: [data, web]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "from urllib.request import urlopen; urlopen('http://127.0.0.1:8000/readyz', timeout=2).close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 10s
+
+  worker:
+    profiles: [worker]
+    build: *backend-build
+    environment: *backend-environment
+    command: ["python", "-m", "enot_api.cli", "worker"]
+    networks: [data]
+    depends_on:
+      seed:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "python", "-c", "from sqlalchemy import text; from enot_api.db import session_factory; session = session_factory()(); session.execute(text('SELECT 1')); session.close()"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  backend-tests:
+    profiles: [ci]
+    build:
+      <<: *backend-build
+      target: test
+    environment:
+      <<: *backend-environment
+      TEST_DATABASE_URL: postgresql+psycopg://enot_app:${DB_APP_PASSWORD:?Set DB_APP_PASSWORD in .env}@db:5432/enot_test
+    networks: [data]
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    profiles: [web]
+    build:
+      context: .
+      dockerfile: infra/frontend.Dockerfile
+    environment:
+      API_INTERNAL_ORIGIN: http://api:8000
+    ports:
+      - "127.0.0.1:${WEB_PORT:-3000}:3000"
+    networks: [web]
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/', {redirect: 'manual', signal: AbortSignal.timeout(2500)}).then(r => { if (r.status >= 400) process.exitCode = 1; }).catch(() => { process.exitCode = 1; });"]
+      interval: 10s
+      timeout: 4s
+      retries: 6
+      start_period: 10s
+
+networks:
+  data:
+    internal: true
+  web:
+
+volumes:
+  postgres-data:

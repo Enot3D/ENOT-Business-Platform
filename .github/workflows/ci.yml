@@ -1,0 +1,110 @@
+name: MVP CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mvp-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python-openapi:
+    name: Python and OpenAPI
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install validation tools
+        run: python -m pip install -r analysis/TASK-003/calculator/requirements-test.txt openapi-spec-validator==0.8.5
+      - name: Check Python syntax
+        run: python -m compileall -q analysis/TASK-003/calculator
+      - name: Run calculator tests
+        run: python -m pytest -q analysis/TASK-003/calculator
+      - name: Validate approved OpenAPI 3.1 contract
+        run: openapi-spec-validator architecture/TASK-004/api-contract.yaml
+
+  containers:
+    name: Compose, PostgreSQL and application integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      COMPOSE_PROJECT_NAME: enot-ci
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      # Verify PR #5 with TASK-005 before either PR is merged. Other runs use their own sources.
+      - name: Fetch pinned TASK-005 sources for PR integration
+        if: ${{ github.event.pull_request.number == 5 && hashFiles('backend/requirements.txt') == '' }}
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: 6986a18a6483c7133de28f8076eb45949d7775d6
+          path: task-005-checkout
+          sparse-checkout: backend
+          persist-credentials: false
+      - name: Generate disposable local credentials and signing key
+        run: |
+          for variable in POSTGRES_PASSWORD DB_APP_PASSWORD APP_SIGNING_KEY; do
+            value="$(openssl rand -hex 32)"
+            echo "::add-mask::$value"
+            printf '%s=%s\n' "$variable" "$value" >> "$GITHUB_ENV"
+          done
+      - name: Validate default Compose and all profiles
+        run: |
+          docker compose config --quiet
+          docker compose --profile '*' config --quiet
+      - name: Check PostgreSQL, health, persistence and restore
+        run: |
+          bash infra/postgres/smoke.sh
+          # Backend migrations and schema checks start with an empty database.
+          docker compose down --volumes
+      - name: Check backend syntax, migrations, import, API, worker and pytest
+        run: |
+          if [[ ! -d backend && -d task-005-checkout/backend ]]; then
+            mv task-005-checkout/backend backend
+          fi
+          if [[ ! -d backend ]]; then
+            echo "::notice::Backend integration awaits TASK-005 (backend/ absent)."
+            exit 0
+          fi
+
+          docker compose --profile api --profile worker up -d --build --wait --wait-timeout 120 api worker
+          docker compose exec -T api python -m compileall -q .
+          docker compose exec -T api alembic upgrade head
+          docker compose exec -T api alembic check
+          docker compose exec -T api python -c 'import sys; from urllib.request import urlopen; sys.stdout.buffer.write(urlopen("http://127.0.0.1:8000/openapi.json", timeout=5).read())' > "$RUNNER_TEMP/enot-openapi.json"
+          docker run --rm -v "$RUNNER_TEMP/enot-openapi.json:/spec.json:ro" python:3.12-slim-bookworm sh -ec 'pip install --quiet openapi-spec-validator==0.8.5; openapi-spec-validator /spec.json'
+          first_import="$(docker compose logs --no-log-prefix --no-color seed)"
+          repeated_import="$(docker compose exec -T api python -m enot_api.cli import)"
+          test -n "$first_import" && test "$first_import" = "$repeated_import"
+          echo "Repeated import returned the same release ID and manifest: $repeated_import"
+          docker compose exec -T api python - < infra/backend-smoke.py
+          docker compose exec -T db createdb -U postgres -O enot_app enot_test
+          docker compose --profile ci run --build --rm backend-tests
+      - name: Build frontend when its sources are present
+        if: ${{ !cancelled() }}
+        run: |
+          if [[ ! -d frontend ]]; then
+            echo "::notice::Frontend build awaits TASK-006 (frontend/ absent)."
+            exit 0
+          fi
+
+          docker build --file infra/frontend.Dockerfile .
+      - name: Show container diagnostics on failure
+        if: failure()
+        run: |
+          docker compose --profile '*' ps --all
+          docker compose --profile '*' logs --no-color --tail 80 db migrate seed api worker
+      - name: Remove disposable CI environment
+        if: always()
+        run: docker compose --profile '*' down --volumes --remove-orphans
