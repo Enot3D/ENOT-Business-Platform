@@ -85,7 +85,17 @@ test("pilot catalog, evidence, comparison, analysis and saved report", async ({ 
   await page.getByLabel("Название исследования").fill(title);
   await page.getByRole("button", { name: "Создать исследование" }).click();
   await expect(page.getByRole("combobox", { name: "Исследование", exact: true }).locator("option:checked")).toHaveText(title);
+  const statusPath = /\/api\/v1\/research-projects\/[^/]+\/interpretations\/[^/]+$/;
+  if (info.project.name === "desktop") {
+    await page.route(statusPath, (route) => route.abort("timedout"), { times: 1 });
+  }
   await page.getByRole("button", { name: "Запросить анализ" }).click();
+  if (info.project.name === "desktop") {
+    const timeout = page.getByRole("alert").filter({ hasText: "Сервис временно недоступен" });
+    await expect(timeout).toBeVisible();
+    await expect(page.getByText(/Интервалы баллов пересекаются/)).toBeVisible();
+    await timeout.getByRole("button", { name: "Повторить" }).click();
+  }
   await expect(page.getByText("Доступна локальная сводка")).toBeVisible({ timeout: 20_000 });
   await expect(page.getByRole("button", { name: "Наблюдение 1" }).first()).toBeVisible();
 
