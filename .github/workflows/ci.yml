@@ -121,8 +121,9 @@ jobs:
           printf '%s\n' "$ENOT_E2E_PASSWORD" "$ENOT_E2E_PASSWORD" |
             docker compose exec -T api python -m enot_api.cli create-user "$ENOT_E2E_LOGIN"
           cd frontend
-          npx playwright install --with-deps chromium
+          npx playwright install --with-deps chromium webkit
           npm run test:e2e
+          ENOT_E2E_WEBKIT=1 npm run test:e2e -- --project=phone
       - name: Show container diagnostics on failure
         if: failure()
         run: |
